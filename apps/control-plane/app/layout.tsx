@@ -21,11 +21,28 @@ export const metadata: Metadata = {
     url: '/',
     title: DEFAULT_TITLE,
     description: DEFAULT_DESCRIPTION,
+    images: [
+      {
+        url: '/og-image.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'InvisibleDB — Every backend your app needs. None of the ops. $6.99/mo, first month $1.',
+      },
+    ],
+    videos: [
+      {
+        url: '/teaser.mp4',
+        width: 1280,
+        height: 720,
+        type: 'video/mp4',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: DEFAULT_TITLE,
     description: DEFAULT_DESCRIPTION,
+    images: ['/og-image.jpg'],
   },
 };
 
@@ -37,7 +54,7 @@ const siteJsonLd = {
       '@type': 'Organization',
       name: 'InvisibleDB',
       url: SITE_URL,
-      logo: `${SITE_URL}/opengraph-image`,
+      logo: `${SITE_URL}/og-image.jpg`,
       sameAs: ['https://innovarel.dev'],
     },
     {
