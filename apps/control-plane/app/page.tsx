@@ -5,6 +5,7 @@
  */
 import type { Metadata } from 'next';
 import JsonLd from '../components/JsonLd';
+import DemoPlayer from './components/DemoPlayer';
 
 const title = 'PocketBase Hosting with an Agent OS | InvisibleDB';
 const description =
@@ -59,6 +60,13 @@ export default function HomePage() {
           </a>
         </div>
         <p className="m-fineprint">First month $1 · No credit card to start</p>
+      </section>
+
+      {/* DEMO */}
+      <section className="m-section" style={{ borderTop: 'none', paddingTop: '2rem' }}>
+        <div className="m-wrap">
+          <DemoPlayer />
+        </div>
       </section>
 
       {/* PROBLEM */}
