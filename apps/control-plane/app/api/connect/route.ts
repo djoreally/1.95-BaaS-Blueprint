@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 
   const ok = checks.every((c) => c.state !== 'fail');
   if (ok) {
-    setConnection({
+    await setConnection({
       host: cleanHost, user, apiToken, mainDomain, domains,
       connectedAt: new Date().toISOString(),
     });

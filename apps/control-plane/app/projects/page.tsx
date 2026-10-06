@@ -1,10 +1,12 @@
+export const dynamic = 'force-dynamic';
+
 import { listJobs } from '../../lib/projects';
 import { getConnection } from '../../lib/connection';
 
 /** Project dashboard home — every project, live status. */
 export default async function ProjectsPage() {
-  const conn = getConnection();
-  const projects = listJobs();
+  const conn = await getConnection();
+  const projects = await listJobs();
 
   if (!conn) {
     return (

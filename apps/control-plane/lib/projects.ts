@@ -1,12 +1,14 @@
 /**
- * Project store + provisioning job runner.
+ * Project store + provisioning job runner — Prisma (Neon Postgres) backed.
  *
  * Provisioning calls the REAL `createProject()` from @baas-195/adapter-cpanel.
  * For the live feed, the adapter's injectable `fetchImpl` is wrapped: every
  * raw UAPI call flips its step to running → done/failed as it completes, so
  * the UI renders each adapter step the moment it lands.
  *
- * Store is in-memory (like the connection); production needs a real DB.
+ * Durable project records live in Postgres. Actively-provisioning jobs also
+ * live in a server-memory map so the 2s poll feed sees step transitions
+ * instantly; the DB is updated as steps complete and on finish.
  */
 import { randomBytes } from 'crypto';
 import {
@@ -16,6 +18,7 @@ import {
   ProvisionError,
 } from '@baas-195/adapter-cpanel';
 import type { ProjectProvisioned, UapiConfig } from '@baas-195/adapter-cpanel';
+import { prisma } from './db';
 import { getConnection } from './connection';
 import { insecureFetch } from './tls';
 
@@ -46,7 +49,8 @@ export interface ProjectJob {
   createdAt: string;
 }
 
-const jobs = new Map<string, ProjectJob>();
+/** Live jobs only — the 2s feed reads here for instant step transitions. */
+const activeJobs = new Map<string, ProjectJob>();
 
 const STEP_DEFS: Array<{ id: string; label: string }> = [
   { id: 'subdomain', label: 'Create subdomain' },
@@ -77,6 +81,22 @@ function markStep(job: ProjectJob, id: string, state: StepState, detail?: string
   const now = new Date().toISOString();
   if (state === 'running' && !s.startedAt) s.startedAt = now;
   if (state === 'done' || state === 'failed' || state === 'skipped') s.endedAt = now;
+  // Persist step history so a refresh mid-provisioning doesn't lose the feed.
+  void persistJob(job).catch(() => {});
+}
+
+async function persistJob(job: ProjectJob): Promise<void> {
+  await prisma.project.update({
+    where: { id: job.id },
+    data: {
+      status: job.status,
+      fqdn: job.fqdn,
+      port: job.port,
+      dbName: job.result?.db.name ?? null,
+      dbUser: job.result?.db.user ?? null,
+      steps: job.steps as unknown as object,
+    },
+  }).catch(() => {});
 }
 
 /** fetchImpl wrapper: reports every raw UAPI call as a provisioning step. */
@@ -118,30 +138,88 @@ function htaccessFor(fqdn: string, port: number): string {
   ].join('\n');
 }
 
-function allocatePort(): number {
+async function defaultUserId(): Promise<string> {
+  const user = await prisma.user.upsert({
+    where: { email: 'owner@local' },
+    update: {},
+    create: { email: 'owner@local', name: 'Owner' },
+  });
+  return user.id;
+}
+
+async function allocatePort(): Promise<number> {
   const used = new Set<number>();
-  for (const j of jobs.values()) used.add(j.port);
+  for (const j of activeJobs.values()) used.add(j.port);
+  const rows = await prisma.project.findMany({ select: { port: true } });
+  for (const r of rows) used.add(r.port);
   let port = 18001;
   while (used.has(port) && port < 18999) port++;
   if (port > 18999) throw new Error('port range 18001–18999 exhausted');
   return port;
 }
 
-export function listJobs(): ProjectJob[] {
-  return [...jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+function rowToJob(row: {
+  id: string; name: string; domain: string; fqdn: string; port: number;
+  status: string; steps: unknown; createdAt: Date;
+}): ProjectJob {
+  const steps = Array.isArray(row.steps)
+    ? (row.steps as ProjectStep[])
+    : STEP_DEFS.map((d) => ({
+        ...d,
+        state: (row.status === 'ready' ? 'done' : 'pending') as StepState,
+      }));
+  return {
+    id: row.id,
+    name: row.name,
+    domain: row.domain,
+    fqdn: row.fqdn,
+    port: row.port,
+    status: row.status as ProjectJob['status'],
+    steps,
+    createdAt: row.createdAt.toISOString(),
+    // The seeded live demo keeps its badge + explainer.
+    ...(row.id === 'demo'
+      ? {
+          seeded: true,
+          note: 'Live demo project provisioned 2026-10-06. Public URL is served via the vibecode subdomain until the host fixes new vhosts; PocketBase runs on 127.0.0.1:18001.',
+        }
+      : {}),
+  };
 }
 
-export function getJob(id: string): ProjectJob | undefined {
-  return jobs.get(id);
+export async function listJobs(): Promise<ProjectJob[]> {
+  await ensureSeeded();
+  const userId = await defaultUserId();
+  const rows = await prisma.project.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+  });
+  const byId = new Map(rows.map((r) => [r.id, rowToJob(r)]));
+  // Live jobs win — their step state is fresher than the last persist.
+  for (const j of activeJobs.values()) byId.set(j.id, j);
+  return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-/** Start provisioning in the background; returns immediately with the job id. */
-export function startProvisioning(name: string, domain: string): ProjectJob {
-  const conn = getConnection();
+export async function getJob(id: string): Promise<ProjectJob | undefined> {
+  const live = activeJobs.get(id);
+  if (live) return live;
+  const row = await prisma.project.findUnique({ where: { id } });
+  return row ? rowToJob(row) : undefined;
+}
+
+/** Start provisioning in the background; returns immediately with the job. */
+export async function startProvisioning(name: string, domain: string): Promise<ProjectJob> {
+  const conn = await getConnection();
   if (!conn) throw new Error('No hosting connection. Connect hosting first.');
 
+  const userId = await defaultUserId();
+  const connection = await prisma.hostingConnection.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+  });
+
   const id = `${name}-${Date.now().toString(36)}`;
-  const port = allocatePort();
+  const port = await allocatePort();
   const job: ProjectJob = {
     id,
     name,
@@ -152,14 +230,22 @@ export function startProvisioning(name: string, domain: string): ProjectJob {
     steps: STEP_DEFS.map((d) => ({ ...d, state: 'pending' as StepState })),
     createdAt: new Date().toISOString(),
   };
-  jobs.set(id, job);
+  await prisma.project.create({
+    data: {
+      id, userId, connectionId: connection?.id ?? null,
+      name, domain, fqdn: job.fqdn, port,
+      status: 'provisioning',
+      steps: job.steps as unknown as object,
+    },
+  });
+  activeJobs.set(id, job);
   // Fire and forget — the feed polls GET /api/projects/[id].
   void runProvisioning(id, conn);
   return job;
 }
 
-async function runProvisioning(id: string, conn: NonNullable<ReturnType<typeof getConnection>>): Promise<void> {
-  const job = jobs.get(id);
+async function runProvisioning(id: string, conn: NonNullable<Awaited<ReturnType<typeof getConnection>>>): Promise<void> {
+  const job = activeJobs.get(id);
   if (!job) return;
   const dbPassword = randomBytes(18).toString('base64').replace(/[^A-Za-z0-9]/g, 'x');
   job.dbPassword = dbPassword;
@@ -200,55 +286,50 @@ async function runProvisioning(id: string, conn: NonNullable<ReturnType<typeof g
     for (const s of job.steps) if (s.state === 'running') markStep(job, s.id, 'failed');
     job.status = 'failed';
     job.error = msg;
+  } finally {
+    await persistJob(job);
+    if (job.status !== 'provisioning') activeJobs.delete(id);
   }
 }
 
-/** Tear down via the real adapter, then drop the job from the store. */
+/** Tear down via the real adapter, then drop the project from the store. */
 export async function teardownProject(id: string): Promise<{ removed: string[]; errors: Array<{ step: string; error: string }> }> {
-  const job = jobs.get(id);
+  const job = await getJob(id);
   if (!job) throw new Error('unknown project');
-  const conn = getConnection();
+  const conn = await getConnection();
   if (!conn) throw new Error('No hosting connection.');
   const report = await deleteProject(
     { host: conn.host, user: conn.user, apiToken: conn.apiToken, fetchImpl: insecureFetch as unknown as typeof fetch },
     { name: job.name, domain: job.domain },
   );
-  jobs.delete(id);
+  activeJobs.delete(id);
+  await prisma.project.deleteMany({ where: { id } });
   return { removed: report.removed, errors: report.errors };
 }
 
 /** Seed the real demo project living on the box (vibecode → :18001). */
-function seedDemo(): void {
-  if (jobs.has('demo')) return;
+async function ensureSeeded(): Promise<void> {
+  const userId = await defaultUserId();
+  const existing = await prisma.project.findUnique({ where: { id: 'demo' } });
+  if (existing) return;
   const done: ProjectStep[] = STEP_DEFS.map((d) => ({
     ...d,
     state: 'done' as StepState,
     startedAt: '2026-10-06T04:15:00Z',
     endedAt: '2026-10-06T04:29:00Z',
   }));
-  jobs.set('demo', {
-    id: 'demo',
-    name: 'demo',
-    domain: 'momsoilchange.com',
-    fqdn: 'vibecode.momsoilchange.com',
-    port: 18001,
-    status: 'ready',
-    steps: done,
-    createdAt: '2026-10-06T04:15:00Z',
-    seeded: true,
-    note: 'Live demo project provisioned 2026-10-06. Public URL is served via the vibecode subdomain until the host fixes new vhosts; PocketBase runs on 127.0.0.1:18001.',
-    result: {
+  await prisma.project.create({
+    data: {
+      id: 'demo',
+      userId,
       name: 'demo',
+      domain: 'momsoilchange.com',
       fqdn: 'vibecode.momsoilchange.com',
       port: 18001,
-      db: { name: 'momsoilc_demo_db', user: 'momsoilc_demo_u' },
-      docRoot: 'public_html/demo',
-      sslPending: false,
-      cronSkipped: true,
-      dryRun: false,
-      callLog: [],
+      dbName: 'momsoilc_demo_db',
+      dbUser: 'momsoilc_demo_u',
+      status: 'ready',
+      steps: done as unknown as object,
     },
   });
 }
-
-seedDemo();

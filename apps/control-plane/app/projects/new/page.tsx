@@ -1,10 +1,12 @@
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
 import { getConnection } from '../../../lib/connection';
 import NewProjectForm from '../../../components/NewProjectForm';
 
 /** New-project wizard (step 1 of provisioning). */
 export default async function NewProjectPage() {
-  const conn = getConnection();
+  const conn = await getConnection();
   if (!conn) redirect('/connect');
   return (
     <>

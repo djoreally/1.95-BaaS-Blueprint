@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { notFound } from 'next/navigation';
 import { getJob } from '../../../lib/projects';
 import ProvisioningFeed from '../../../components/ProvisioningFeed';
@@ -20,7 +22,7 @@ const WATCHDOG_CRON = '*/2 * * * * $HOME/baas/bin/watchdog.sh >> $HOME/baas/logs
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const job = getJob(id);
+  const job = await getJob(id);
   if (!job) notFound();
 
   if (job.status !== 'ready') {

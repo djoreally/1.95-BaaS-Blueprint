@@ -1,0 +1,67 @@
+// Prisma schema for the 1.95 BaaS control plane.
+//
+// The control plane's OWN bookkeeping lives here (Neon Postgres).
+// Customer DATA stays on the customer's hosting — SQLite/MySQL files on
+// the box. This DB only remembers who you are, which hosting you
+// connected, and what you provisioned.
+//
+// DATABASE_URL comes from the environment (Neon). Never commit it.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  createdAt    DateTime @default(now())
+
+  connections HostingConnection[]
+  projects    Project[]
+}
+
+model HostingConnection {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label            String?
+  host             String
+  username         String
+  // cPanel API token, AES-256-GCM encrypted. NEVER plaintext.
+  apiTokenEncrypted String  @db.Text
+  mainDomain       String?
+  domains          String[] @default([])
+  createdAt        DateTime @default(now())
+
+  projects Project[]
+
+  @@index([userId])
+}
+
+model Project {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionId String?
+  connection   HostingConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  name         String
+  domain       String
+  fqdn         String
+  port         Int
+  dbName       String?
+  dbUser       String?
+  status       String    @default("provisioning")
+  // Provisioning step history (JSON array of ProjectStep) for the feed.
+  steps        Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([connectionId])
+}
