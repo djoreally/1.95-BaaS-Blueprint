@@ -1,9 +1,21 @@
-# Port registry — single source of truth for project ↔ port allocation.
-# The control plane owns this file; the watchdog reads $APP_DIR/port.
-# Ranges (see docs/06-ports-reverse-proxy.md):
-#   8091–8099  PocketBase instances (one per project)
-#   8100–8199  Node/Passenger-adjacent custom apps
-#   8200+      Reserved: control-plane internals, Litestream metrics
-
-# project,port,fqdn
-# (empty — first project claims 8091)
+# ports.registry — allocation ledger: which app owns which loopback port.
+#
+# This file is the FORMAT TEMPLATE. The live copy lives at
+#   $HOME/baas/registry/ports.registry
+# and is managed by bin/ports.sh (alloc/free/list/get). The control plane
+# allocates; the watchdog only reads. Never hand-edit the live copy while
+# the watchdog is running — use ports.sh (it locks).
+#
+# Format: TSV, one row per app. Columns:
+#   app         URL-safe slug (lowercase, digits, dashes)
+#   port        loopback TCP port, from the configured range (default 18000-18999)
+#   binary      path to the executable, RELATIVE to $BAAS_DIR
+#   health_path HTTP path for liveness checks (default /api/health)
+#   data_dir    app data dir, RELATIVE to $BAAS_DIR
+#   pidfile     pid file, RELATIVE to $BAAS_DIR
+#   extra_args  appended verbatim to the serve command (may be empty)
+#
+# Lines starting with '#' and blank lines are ignored.
+#
+# app	port	binary	health_path	data_dir	pidfile	extra_args
+# (empty — first project claims 18000 via: ports.sh alloc <app>)
