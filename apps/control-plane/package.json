@@ -2,7 +2,7 @@
   "dependencies": {
     "@baas-195/adapter-cpanel": "0.1.0",
     "@prisma/client": "^6.19.3",
-    "next": "15.1.0",
+    "next": "15.5.27",
     "prisma": "^6.19.3",
     "react": "19.0.0",
     "react-dom": "19.0.0"
@@ -13,7 +13,8 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev"
+    "dev": "next dev",
+    "postinstall": "prisma generate"
   },
   "version": "0.1.0",
   "devDependencies": {
