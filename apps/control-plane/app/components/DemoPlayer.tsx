@@ -3,47 +3,46 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 
 /**
- * InvisibleDB 30-second demo — voiceover + synchronized product animation.
- * Audio: /demo-voiceover.mp3 (~34s). Scenes advance on a fixed timeline.
+ * "What is InvisibleDB?" — narrated explainer.
+ * Audio: /demo-voiceover.mp3 (~68s). Scenes advance on a fixed timeline.
+ * Cover: /explainer-cover.jpg
  */
 
 const SCENES = [
-  { at: 0, id: 'terminal' },
-  { at: 6, id: 'dashboard' },
-  { at: 13, id: 'code' },
-  { at: 21, id: 'zeroai' },
-  { at: 29, id: 'endcard' },
+  { at: 0, id: 'who' },
+  { at: 12, id: 'what' },
+  { at: 24, id: 'why' },
+  { at: 36, id: 'get' },
+  { at: 54, id: 'data' },
+  { at: 60, id: 'how' },
 ];
 
-const TERMINAL_LINES = [
-  '$ idb init',
-  '✓ Backend provisioned',
-  '  → demo.invisibledb.app ● LIVE',
+const WHO = [
+  ['Indie developers', 'Shipping solo or small-team'],
+  ['Web apps', 'React, Next.js, Vue'],
+  ['Mobile apps', 'Dart-first, REST for all'],
+  ['AI features', 'Vector search built in'],
 ];
 
-const CODE_LINES = [
-  "import { InvisibleDB } from 'invisibledb';",
-  '',
-  'const db = new InvisibleDB({',
-  "  baseUrl: 'https://demo.invisibledb.app',",
-  "  apiKey: 'idb_live_···',",
-  '});',
-  '',
-  'await db.auth.signIn(email, password);',
-  'db.collection("notes").subscribe(render);',
-  '',
-  '// → 200 OK · realtime connected',
+const WHAT = [
+  ['Auth', 'Email, OAuth, tokens'],
+  ['Realtime DB', 'Subscribe, sync, done'],
+  ['File storage', 'Uploads handled'],
+  ['Vector search', 'AI-native, no add-on'],
 ];
 
-const PLANES = ['Memory', 'Ledger', 'Policy', 'Gates'];
+const PLANES = [
+  ['Memory', 'Agents learn across sessions'],
+  ['Ledger', 'Tamper-evident action log'],
+  ['Policy', "Agents can't grant themselves power"],
+  ['Gates', 'Deterministic release checks'],
+];
 
 export default function DemoPlayer() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [scene, setScene] = useState(0);
-  const [typedTerm, setTypedTerm] = useState(0);
-  const [typedCode, setTypedCode] = useState(0);
-  const [planesOn, setPlanesOn] = useState(0);
+  const [cards, setCards] = useState(0);
   const [ended, setEnded] = useState(false);
   const timers = useRef<number[]>([]);
 
@@ -57,21 +56,16 @@ export default function DemoPlayer() {
 
   const runTimeline = useCallback(() => {
     clear();
-    // scene switches
-    SCENES.forEach((s, i) => later(s.at * 1000, () => setScene(i)));
-    // terminal typing: 3 lines over ~5s
-    TERMINAL_LINES.forEach((_, i) => later(800 + i * 1400, () => setTypedTerm(i + 1)));
-    // code typing: 11 lines over ~7s
-    CODE_LINES.forEach((_, i) => later(13500 + i * 550, () => setTypedCode(i + 1)));
-    // zeroai planes: 4 cards over ~6s
-    PLANES.forEach((_, i) => later(21500 + i * 1300, () => setPlanesOn(i + 1)));
+    SCENES.forEach((s, i) => later(s.at * 1000, () => { setScene(i); setCards(0); }));
+    // card reveals per scene: who(0-12), what(12-24), get(36-54)
+    WHO.forEach((_, i) => later(1500 + i * 2200, () => { setScene(0); setCards(i + 1); }));
+    WHAT.forEach((_, i) => later(13500 + i * 2200, () => { setScene(1); setCards(i + 1); }));
+    PLANES.forEach((_, i) => later(37500 + i * 3400, () => { setScene(3); setCards(i + 1); }));
   }, []);
 
   const reset = () => {
     setScene(0);
-    setTypedTerm(0);
-    setTypedCode(0);
-    setPlanesOn(0);
+    setCards(0);
     setEnded(false);
   };
 
@@ -107,45 +101,63 @@ export default function DemoPlayer() {
     };
   }, []);
 
+  const grid = (items: string[][], n: number) => (
+    <div className="demo-grid">
+      {items.map(([t, d], i) => (
+        <div key={t} className={`demo-card ${n > i ? 'on' : ''}`}>
+          <h4>{t}</h4>
+          <p>{d}</p>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div className="demo-shell">
       <style>{`
         .demo-shell { position: relative; border: 1px solid #232327; border-radius: 16px; overflow: hidden; background: #0a0a0b; aspect-ratio: 16/9; max-width: 880px; margin: 0 auto; }
         .demo-scene { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; opacity: 0; transition: opacity .6s ease; pointer-events: none; }
         .demo-scene.on { opacity: 1; pointer-events: auto; }
-        .demo-term { width: 100%; max-width: 560px; background: #131316; border: 1px solid #232327; border-radius: 12px; padding: 1.25rem 1.5rem; font-family: ui-monospace, monospace; font-size: .95rem; line-height: 1.9; color: #f4f4f5; text-align: left; }
-        .demo-term .ok { color: #f59e0b; }
-        .demo-term .dim { color: #71717a; }
-        .demo-cursor { display: inline-block; width: .6em; height: 1.1em; background: #f59e0b; vertical-align: -0.15em; animation: blink 1s steps(1) infinite; }
-        @keyframes blink { 50% { opacity: 0; } }
-        .demo-dash { width: 100%; max-width: 560px; background: #131316; border: 1px solid #232327; border-radius: 12px; padding: 1.5rem; text-align: left; }
-        .demo-dash .row { display: flex; justify-content: space-between; align-items: center; padding: .6rem 0; border-bottom: 1px solid #232327; font-size: .95rem; }
-        .demo-dash .row:last-child { border: none; }
-        .demo-live { color: #f59e0b; font-weight: 700; }
-        .demo-key { font-family: ui-monospace, monospace; background: #0a0a0b; border: 1px solid #232327; padding: .25rem .6rem; border-radius: 6px; font-size: .85rem; }
-        .demo-code { width: 100%; max-width: 560px; background: #131316; border: 1px solid #232327; border-radius: 12px; padding: 1.25rem 1.5rem; font-family: ui-monospace, monospace; font-size: .82rem; line-height: 1.7; color: #d4d4d8; text-align: left; white-space: pre-wrap; min-height: 220px; }
-        .demo-code .cm { color: #71717a; }
-        .demo-planes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: 100%; max-width: 520px; }
-        .demo-plane { background: #131316; border: 1px solid #f59e0b; border-radius: 12px; padding: 1.25rem; text-align: center; opacity: 0; transform: translateY(12px); transition: all .5s ease; }
-        .demo-plane.on { opacity: 1; transform: none; }
-        .demo-plane h4 { margin: 0 0 .25rem; color: #f59e0b; font-size: 1.05rem; }
-        .demo-plane p { margin: 0; color: #a1a1aa; font-size: .8rem; }
+        .demo-k { color: #f59e0b; font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin-bottom: .75rem; }
+        .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; width: 100%; max-width: 560px; }
+        .demo-card { background: #131316; border: 1px solid #232327; border-radius: 12px; padding: 1.1rem 1.25rem; text-align: left; opacity: 0; transform: translateY(12px); transition: all .5s ease; }
+        .demo-card.on { opacity: 1; transform: none; border-color: #f59e0b; }
+        .demo-card h4 { margin: 0 0 .25rem; color: #f4f4f5; font-size: 1rem; }
+        .demo-card p { margin: 0; color: #a1a1aa; font-size: .82rem; }
+        .demo-bill { width: 100%; max-width: 520px; }
+        .demo-bill .row { display: flex; justify-content: space-between; align-items: center; background: #131316; border: 1px solid #232327; border-radius: 10px; padding: .9rem 1.25rem; margin-bottom: .7rem; font-size: .95rem; }
+        .demo-bill .bad { color: #f87171; font-weight: 700; }
+        .demo-bill .good { color: #f59e0b; font-weight: 700; }
+        .demo-file { background: #131316; border: 1px solid #f59e0b; border-radius: 12px; padding: 1.5rem 2rem; text-align: center; }
+        .demo-file .fn { font-family: ui-monospace, monospace; color: #f59e0b; font-size: 1.1rem; }
+        .demo-file p { color: #a1a1aa; margin: .5rem 0 0; font-size: .9rem; }
         .demo-end h3 { font-size: clamp(2rem, 5vw, 3rem); margin: 0 0 .5rem; letter-spacing: -0.02em; color: #f4f4f5; }
         .demo-end h3 .hl { color: #f59e0b; }
-        .demo-end p { color: #a1a1aa; margin: 0 0 1.5rem; }
-        .demo-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; background: rgba(10,10,11,.72); z-index: 5; cursor: pointer; border: none; width: 100%; color: #f4f4f5; }
-        .demo-play { width: 84px; height: 84px; border-radius: 50%; background: #f59e0b; color: #0a0a0b; font-size: 2rem; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; }
+        .demo-end p { color: #a1a1aa; margin: 0 0 1.25rem; }
+        .demo-steps { display: flex; gap: .75rem; margin-bottom: 1.5rem; }
+        .demo-steps span { background: #131316; border: 1px solid #232327; border-radius: 999px; padding: .45rem 1.1rem; font-size: .85rem; color: #d4d4d8; }
+        .demo-steps span b { color: #f59e0b; margin-right: .4rem; }
+        .demo-overlay { position: absolute; inset: 0; z-index: 5; cursor: pointer; border: none; width: 100%; padding: 0; background: #0a0a0b; }
+        .demo-overlay img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .demo-veil { position: absolute; inset: 0; background: linear-gradient(to top, rgba(10,10,11,.88) 0%, rgba(10,10,11,.25) 55%, rgba(10,10,11,.45) 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .8rem; color: #f4f4f5; }
+        .demo-veil h3 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.4rem); letter-spacing: -0.02em; }
+        .demo-veil h3 .hl { color: #f59e0b; }
+        .demo-veil .sub { color: #d4d4d8; font-size: 1rem; }
+        .demo-play { width: 84px; height: 84px; border-radius: 50%; background: #f59e0b; color: #0a0a0b; font-size: 2rem; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; margin-top: .5rem; }
         .demo-stop { position: absolute; top: 1rem; right: 1rem; z-index: 6; background: rgba(19,19,22,.85); border: 1px solid #232327; color: #f4f4f5; border-radius: 8px; padding: .4rem .8rem; font-size: .8rem; cursor: pointer; }
-        .demo-bar { position: absolute; bottom: 0; left: 0; height: 3px; background: #f59e0b; z-index: 6; transition: width .3s linear; }
+        .demo-cta { margin-top: .5rem; background: #f59e0b; color: #0a0a0b; padding: .7rem 1.6rem; border-radius: 10px; font-weight: 700; text-decoration: none; }
       `}</style>
 
       <audio ref={audioRef} src="/demo-voiceover.mp3" preload="auto" />
 
       {!playing && !ended && (
-        <button className="demo-overlay" onClick={play} aria-label="Play the 30-second demo">
-          <span className="demo-play">▶</span>
-          <span style={{ fontWeight: 600 }}>Watch the 34-second demo</span>
-          <span style={{ color: '#a1a1aa', fontSize: '.9rem' }}>with voiceover</span>
+        <button className="demo-overlay" onClick={play} aria-label="Watch the InvisibleDB explainer">
+          <img src="/explainer-cover.jpg" alt="What is InvisibleDB?" />
+          <span className="demo-veil">
+            <h3>What is <span className="hl">InvisibleDB?</span></h3>
+            <span className="sub">The 60-second explainer — who it&rsquo;s for, what you get, why it exists</span>
+            <span className="demo-play">▶</span>
+          </span>
         </button>
       )}
 
@@ -154,56 +166,62 @@ export default function DemoPlayer() {
       )}
 
       {ended && (
-        <button className="demo-overlay" onClick={play} aria-label="Replay the demo">
-          <span className="demo-play">↻</span>
-          <span style={{ fontWeight: 600 }}>Replay</span>
-          <a href="/signup" onClick={(e) => e.stopPropagation()} style={{ marginTop: '.5rem', background: '#f59e0b', color: '#0a0a0b', padding: '.7rem 1.6rem', borderRadius: 10, fontWeight: 700, textDecoration: 'none' }}>Get started — first month $1</a>
+        <button className="demo-overlay" onClick={play} aria-label="Replay the explainer">
+          <img src="/explainer-cover.jpg" alt="" />
+          <span className="demo-veil">
+            <span className="demo-play">↻</span>
+            <span style={{ fontWeight: 600 }}>Replay the explainer</span>
+            <a href="/signup" onClick={(e) => e.stopPropagation()} className="demo-cta">Get started — first month $1</a>
+          </span>
         </button>
       )}
 
-      {/* Scene 0: terminal */}
+      {/* WHO */}
       <div className={`demo-scene ${scene === 0 && playing ? 'on' : ''}`}>
-        <div className="demo-term">
-          {TERMINAL_LINES.slice(0, typedTerm).map((l, i) => (
-            <div key={i} className={l.startsWith('✓') || l.includes('●') ? 'ok' : l.startsWith('$') ? '' : 'dim'}>{l}</div>
-          ))}
-          <span className="demo-cursor" />
-        </div>
+        <div className="demo-k">Who it&rsquo;s for</div>
+        {grid(WHO, cards)}
       </div>
 
-      {/* Scene 1: dashboard */}
+      {/* WHAT */}
       <div className={`demo-scene ${scene === 1 && playing ? 'on' : ''}`}>
-        <div className="demo-dash">
-          <div className="row"><span><strong>demo</strong> <span className="dim">· invisibledb.app</span></span><span className="demo-live">● LIVE</span></div>
-          <div className="row"><span className="dim">API key</span><span className="demo-key">idb_live_9f2k…</span></div>
-          <div className="row"><span className="dim">Plan</span><span>$6.99/mo · first month $1</span></div>
-        </div>
+        <div className="demo-k">What it is</div>
+        {grid(WHAT, cards)}
+        <p style={{ color: '#a1a1aa', margin: '1rem 0 0', fontSize: '.9rem' }}>One SDK — JavaScript, Dart, or plain REST</p>
       </div>
 
-      {/* Scene 2: code */}
+      {/* WHY */}
       <div className={`demo-scene ${scene === 2 && playing ? 'on' : ''}`}>
-        <div className="demo-code">
-          {CODE_LINES.slice(0, typedCode).map((l, i) => (
-            <div key={i} className={l.startsWith('//') ? 'cm' : ''}>{l || ' '}</div>
-          ))}
+        <div className="demo-k">Why it exists</div>
+        <div className="demo-bill">
+          <div className="row"><span>Metered backends, after traction</span><span className="bad">$500+/mo</span></div>
+          <div className="row"><span>PocketBase hosting, per backend</span><span className="bad">$9.99/mo · no AI story</span></div>
+          <div className="row"><span>InvisibleDB, flat</span><span className="good">$6.99/mo · first month $1</span></div>
         </div>
       </div>
 
-      {/* Scene 3: zeroai */}
+      {/* WHAT YOU GET */}
       <div className={`demo-scene ${scene === 3 && playing ? 'on' : ''}`}>
-        <p style={{ color: '#a1a1aa', margin: '0 0 1.25rem' }}>Every seat ships the <strong style={{ color: '#f4f4f5' }}>ZeroAI agent OS</strong></p>
-        <div className="demo-planes">
-          {PLANES.map((p, i) => (
-            <div key={p} className={`demo-plane ${planesOn > i ? 'on' : ''}`}>
-              <h4>{p}</h4>
-              <p>{['Agents remember across sessions', 'Tamper-evident action log', 'Agents can\'t grant themselves power', 'Deterministic release checks'][i]}</p>
-            </div>
-          ))}
+        <div className="demo-k">What you get — the ZeroAI agent OS</div>
+        {grid(PLANES, cards)}
+      </div>
+
+      {/* DATA */}
+      <div className={`demo-scene ${scene === 4 && playing ? 'on' : ''}`}>
+        <div className="demo-k">Your data</div>
+        <div className="demo-file">
+          <div className="fn">◈ your-app.sqlite</div>
+          <p>Yours. Take it anywhere — including away from us.</p>
         </div>
       </div>
 
-      {/* Scene 4: end card */}
-      <div className={`demo-scene demo-end ${scene === 4 && playing ? 'on' : ''}`}>
+      {/* HOW */}
+      <div className={`demo-scene demo-end ${scene === 5 && playing ? 'on' : ''}`}>
+        <div className="demo-k">How you start</div>
+        <div className="demo-steps">
+          <span><b>1</b>Sign up</span>
+          <span><b>2</b>Grab API keys</span>
+          <span><b>3</b>Ship</span>
+        </div>
         <h3>Invisible<span className="hl">DB</span></h3>
         <p>Every backend your app needs. None of the ops.</p>
       </div>
