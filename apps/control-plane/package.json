@@ -1,1 +1,22 @@
-{"dependencies":{"@baas-195/adapter-cpanel":"0.1.0","next":"15.1.0","react":"19.0.0","react-dom":"19.0.0"},"description":"Coolify-style dashboard for the 1.95 BaaS — the moat is the experience","license":"UNSET","name":"control-plane","private":true,"scripts":{"build":"next build","dev":"next dev"},"version":"0.1.0"}
+{
+  "dependencies": {
+    "@baas-195/adapter-cpanel": "0.1.0",
+    "next": "15.1.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "description": "Coolify-style dashboard for the 1.95 BaaS \u2014 the moat is the experience",
+  "license": "AGPL-3.0-only",
+  "name": "control-plane",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev"
+  },
+  "version": "0.1.0",
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/react": "^19.3.0",
+    "@types/node": "^26.6.4"
+  }
+}

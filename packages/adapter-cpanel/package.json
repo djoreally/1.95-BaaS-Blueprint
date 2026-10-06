@@ -4,7 +4,7 @@
     "@types/node": "^26.6.4",
     "typescript": "^7.0.2"
   },
-  "license": "UNSET",
+  "license": "Apache-2.0",
   "main": "dist/index.js",
   "name": "@baas-195/adapter-cpanel",
   "private": true,
