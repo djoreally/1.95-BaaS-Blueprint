@@ -74,6 +74,12 @@ function SiteFooter() {
                 <a href="/docs#rest">REST API</a>
               </li>
               <li>
+                <a href="/tools/api-playground">API playground</a>
+              </li>
+              <li>
+                <a href="/tools/vector-playground">Vector search demo</a>
+              </li>
+              <li>
                 <a href="/agents#mcp">MCP server</a>
               </li>
             </ul>
