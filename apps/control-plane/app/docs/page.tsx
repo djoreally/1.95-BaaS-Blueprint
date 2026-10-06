@@ -41,11 +41,12 @@ export default function DocsPage() {
             </div>
 
             <div className="m-doc-step">
-              <div className="step-label">Step 3 — Dart SDK</div>
-              <h3>Connect your Flutter app</h3>
+              <div className="step-label">Step 3 — Mobile SDK</div>
+              <h3>Connect your mobile app</h3>
               <p>
-                Add the SDK, point it at your backend, and you&apos;re live — auth,
-                realtime data, and files through one client:
+                First-class Dart SDK for Flutter — auth, realtime data, and files
+                through one client. Prefer React Native, Swift, or Kotlin? Every
+                endpoint below is plain REST (Step 4):
               </p>
               <pre className="code">{`// pubspec.yaml
 dependencies:

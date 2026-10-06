@@ -8,14 +8,14 @@ export default function HomePage() {
     <div className="m-page">
       {/* HERO */}
       <section className="m-hero">
-        <span className="m-kicker-pill">Built for Flutter &amp; indie mobile devs</span>
+        <span className="m-kicker-pill">Built for web &amp; mobile devs</span>
         <h1>
           Every backend Firebase gives you. <span className="hl">None of the bill.</span>
         </h1>
         <p className="sub">
           InvisibleDB is the invisible backend: auth, realtime database, file storage, and
-          built-in vector search — through one Dart SDK. For the price of a coffee. And the
-          database file is yours.
+          built-in vector search — through one SDK for your web or mobile app. For the
+          price of a coffee. And the database file is yours.
         </p>
         <div className="m-hero-ctas">
           <a className="m-btn" href="/signup">
@@ -81,7 +81,7 @@ export default function HomePage() {
               <div className="icon">⚡</div>
               <h3>Realtime database</h3>
               <p>
-                Collections, relations, and live subscriptions. Your Flutter UI updates the
+                Collections, relations, and live subscriptions. Your UI updates the
                 moment data changes — no polling, no sockets to manage.
               </p>
             </div>
@@ -143,8 +143,8 @@ export default function HomePage() {
               <span className="num">2</span>
               <h3>Grab your API keys</h3>
               <p>
-                Copy your keys and the SDK snippet from the dashboard. Paste it into your
-                Flutter app.
+                Copy your keys and the SDK snippet from the dashboard. Paste it into
+                your web or mobile app.
               </p>
             </div>
             <div className="m-step">
