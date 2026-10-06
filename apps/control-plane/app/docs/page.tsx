@@ -68,7 +68,7 @@ export default function DocsPage() {
               <div className="step-label">Step 1 — Sign up</div>
               <h3>Create your account</h3>
               <p>
-                An email address and you&apos;re in — first seat is $1, no credit card to
+                An email address and you&apos;re in — first month is $1, no credit card to
                 start. Your backend is provisioned automatically the moment your account
                 exists.
               </p>
@@ -192,7 +192,7 @@ curl -X POST https://your-app.invisibledb.app/api/vector/query \\
       {/* CTA */}
       <section className="m-cta-band">
         <h2>Ready to build?</h2>
-        <p>First seat is $1. The docs are short because the product is simple.</p>
+        <p>First month is $1. The docs are short because the product is simple.</p>
         <a className="m-btn" href="/signup">
           Get started
         </a>

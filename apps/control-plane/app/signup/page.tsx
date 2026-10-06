@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Get Started — First Seat $1 | InvisibleDB',
   description:
-    'Create your InvisibleDB account. First seat $1, no credit card to start — auth, realtime database, storage and vector search included.',
+    'Create your InvisibleDB account. First month $1, no credit card to start — auth, realtime database, storage and vector search included.',
   alternates: { canonical: 'https://baas.innovarel.dev/signup' },
 };
 

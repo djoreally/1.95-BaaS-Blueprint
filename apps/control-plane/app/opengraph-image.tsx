@@ -51,7 +51,7 @@ export default async function Image() {
           Every backend Firebase gives you. None of the bill.
         </div>
         <div style={{ fontSize: 32, color: '#a8a29e', marginTop: 32 }}>
-          $6.99/mo flat · first seat $1 · the database file is yours
+          $6.99/mo flat · first month $1 · the database file is yours
         </div>
       </div>
     ),

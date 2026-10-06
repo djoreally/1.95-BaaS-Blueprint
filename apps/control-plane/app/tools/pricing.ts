@@ -221,7 +221,7 @@ export const SOURCES: PricingSource[] = [
   },
   {
     label: 'InvisibleDB pricing',
-    detail: '$6.99 / mo per seat, first seat $1 — matches the InvisibleDB pricing page.',
+    detail: '$6.99 / mo per seat, first month $1 — matches the InvisibleDB pricing page.',
     asOf: 'Oct 2026',
   },
 ];

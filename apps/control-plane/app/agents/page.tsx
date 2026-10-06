@@ -195,7 +195,7 @@ export default function AgentsPage() {
       {/* CTA */}
       <section className="m-cta-band">
         <h2>Give your agents infrastructure with a memory.</h2>
-        <p>First seat is $1. The agents are already waiting.</p>
+        <p>First month is $1. The agents are already waiting.</p>
         <a className="m-btn" href="/signup">
           Get started with InvisibleDB
         </a>

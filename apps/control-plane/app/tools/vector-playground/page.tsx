@@ -97,7 +97,7 @@ const DOCS: Doc[] = [
   },
   {
     id: 10,
-    title: 'Why the first seat is $1',
+    title: 'Why the first month is $1',
     excerpt:
       'Try the whole backend for a dollar. If it is not worth it, leave — your data files come with you.',
     tags: ['pricing', 'ownership'],

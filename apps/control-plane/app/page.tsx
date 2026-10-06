@@ -8,7 +8,7 @@ import JsonLd from '../components/JsonLd';
 
 const title = 'Firebase Alternative for Indie Hackers | InvisibleDB';
 const description =
-  'The Firebase alternative for indie hackers: auth, realtime DB, storage, vector search in one SDK. $6.99/mo flat, first seat $1. Your data stays yours.';
+  'The Firebase alternative for indie hackers: auth, realtime DB, storage, vector search in one SDK. $6.99/mo flat, first month $1. Your data stays yours.';
 
 export const metadata: Metadata = {
   title,
@@ -31,7 +31,7 @@ const productJsonLd = {
     '@type': 'Offer',
     price: '6.99',
     priceCurrency: 'USD',
-    description: 'Per seat per month. First seat $1.',
+    description: 'Per seat per month. First month $1.',
   },
 };
 
@@ -58,7 +58,7 @@ export default function HomePage() {
             See pricing
           </a>
         </div>
-        <p className="m-fineprint">First seat $1 · No credit card to start</p>
+        <p className="m-fineprint">First month $1 · No credit card to start</p>
       </section>
 
       {/* PROBLEM */}
@@ -216,7 +216,7 @@ export default function HomePage() {
               <tbody>
                 <tr>
                   <td>Price</td>
-                  <td className="win">$6.99/mo flat · first seat $1</td>
+                  <td className="win">$6.99/mo flat · first month $1</td>
                   <td>Free, then scales to hundreds</td>
                   <td>$9.99/mo per backend</td>
                 </tr>
@@ -255,7 +255,7 @@ export default function HomePage() {
       {/* CTA */}
       <section className="m-cta-band">
         <h2>Your backend, handled.</h2>
-        <p>First seat is $1. Your data stays yours. What&apos;s stopping you?</p>
+        <p>First month is $1. Your data stays yours. What&apos;s stopping you?</p>
         <a className="m-btn" href="/signup">
           Get started with InvisibleDB
         </a>

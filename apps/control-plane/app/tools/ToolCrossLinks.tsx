@@ -52,7 +52,7 @@ export default function ToolCrossLinks({ current }: { current: string }) {
         ))}
         <li>
           <Link href="/pricing">
-            <strong>InvisibleDB pricing</strong> — one flat $6.99/mo, first seat $1
+            <strong>InvisibleDB pricing</strong> — one flat $6.99/mo, first month $1
           </Link>
         </li>
         <li>

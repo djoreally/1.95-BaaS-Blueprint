@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'], display: 'swap' });
 const SITE_URL = 'https://baas.innovarel.dev';
 const DEFAULT_TITLE = 'InvisibleDB — The Invisible Backend for Web & Mobile Apps';
 const DEFAULT_DESCRIPTION =
-  'The Firebase alternative for web & mobile apps: auth, realtime database, file storage, and built-in vector search. $6.99/mo flat, first seat $1.';
+  'The Firebase alternative for web & mobile apps: auth, realtime database, file storage, and built-in vector search. $6.99/mo flat, first month $1.';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

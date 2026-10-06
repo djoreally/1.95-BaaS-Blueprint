@@ -6,7 +6,7 @@ import JsonLd from '../../components/JsonLd';
 
 const title = 'Backend Pricing — $6.99/mo, First Seat $1 | InvisibleDB';
 const description =
-  'InvisibleDB pricing: one flat $6.99/mo per seat, first seat $1. Auth, realtime DB, storage, vector search, ZeroAI agent OS. No meters, no surprise bills.';
+  'InvisibleDB pricing: one flat $6.99/mo per seat, first month $1. Auth, realtime DB, storage, vector search, ZeroAI agent OS. No meters, no surprise bills.';
 
 export const metadata: Metadata = {
   title,
@@ -29,7 +29,7 @@ const productJsonLd = {
     '@type': 'Offer',
     price: '6.99',
     priceCurrency: 'USD',
-    description: 'Per seat per month. First seat $1.',
+    description: 'Per seat per month. First month $1.',
   },
 };
 
@@ -78,7 +78,7 @@ const faqJsonLd = {
       name: 'Is the free tier really free?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: "Yes. Run InvisibleDB on your own hosting while you develop — full features, no card, no trial clock. Hosted seats are $6.99/mo (first seat $1) when you're ready.",
+        text: "Yes. Run InvisibleDB on your own hosting while you develop — full features, no card, no trial clock. Hosted seats are $6.99/mo (first month $1) when you're ready.",
       },
     },
     {
@@ -118,7 +118,7 @@ export default function PricingPage() {
               $6.99<span>/mo</span>
             </div>
             <div>
-              <span className="first">First seat $1</span>
+              <span className="first">First month $1</span>
             </div>
             <ul className="m-checklist">
               <li>Full backend: auth, realtime database, file storage, admin UI</li>
@@ -169,7 +169,7 @@ export default function PricingPage() {
               <tbody>
                 <tr>
                   <td>Price</td>
-                  <td className="win">$6.99/mo flat · first seat $1</td>
+                  <td className="win">$6.99/mo flat · first month $1</td>
                   <td>Free, then scales to hundreds</td>
                   <td>$9.99/mo per backend</td>
                 </tr>
@@ -274,7 +274,7 @@ export default function PricingPage() {
               <p>
                 Yes. Run InvisibleDB on your own hosting while you develop — full features,
                 no card, no trial clock. When you want us to host it and stop thinking about
-                servers, that&apos;s $6.99/mo (first seat $1).
+                servers, that&apos;s $6.99/mo (first month $1).
               </p>
             </details>
             <details>
@@ -293,7 +293,7 @@ export default function PricingPage() {
       {/* CTA */}
       <section className="m-cta-band">
         <h2>Your backend, handled.</h2>
-        <p>First seat is $1. Your data stays yours. What&apos;s stopping you?</p>
+        <p>First month is $1. Your data stays yours. What&apos;s stopping you?</p>
         <a className="m-btn" href="/signup">
           Get started with InvisibleDB
         </a>

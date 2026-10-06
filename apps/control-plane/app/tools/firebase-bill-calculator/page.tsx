@@ -316,7 +316,7 @@ export default function FirebaseBillCalculatorPage() {
 
         <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
           <a className="m-btn" href="/signup">
-            One flat price instead — first seat $1
+            One flat price instead — first month $1
           </a>
         </div>
       </div>

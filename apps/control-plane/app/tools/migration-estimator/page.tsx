@@ -357,7 +357,7 @@ export default function MigrationEstimatorPage() {
 
             <div style={{ textAlign: 'center', marginTop: '2rem' }}>
               <a className="m-btn" href="/signup">
-                Start migrating — first seat $1
+                Start migrating — first month $1
               </a>
             </div>
           </>

@@ -110,7 +110,7 @@ export default function ToolsIndexPage() {
         <h2>
           Done estimating? <span className="hl">Start building.</span>
         </h2>
-        <p>$6.99/mo per seat, first seat $1. The database file is yours.</p>
+        <p>$6.99/mo per seat, first month $1. The database file is yours.</p>
         <a className="m-btn" href="/signup">
           Get started
         </a>

@@ -104,7 +104,7 @@ export default function CostComparatorPage() {
         name: 'InvisibleDB',
         tagline: 'Per seat, flat',
         monthly: estimateInvisibleDb(seats),
-        howPriced: seats <= 1 ? 'First seat $1' : `First seat $1 + ${seats - 1} × $6.99`,
+        howPriced: seats <= 1 ? 'First month $1' : `First month $1 + ${seats - 1} × $6.99`,
         notes: 'Flat. Auth, realtime DB, storage, vector search included.',
       },
     ];
@@ -336,7 +336,7 @@ export default function CostComparatorPage() {
 
         <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
           <a className="m-btn" href="/signup">
-            Skip the spreadsheet — first seat $1
+            Skip the spreadsheet — first month $1
           </a>
         </div>
       </div>
