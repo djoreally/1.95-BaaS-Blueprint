@@ -94,4 +94,4 @@ Full `createProject` → `deleteProject` smoke test run live: subdomain ✓, MyS
 
 Critically, the failure proved the rollback path for real: all 5 created resources were torn down automatically, zero leftovers verified via list calls.
 
-**Implication:** do not depend on UAPI Cron on this host. The supervisor's global watchdog needs exactly one cron line — install it once via `bin/install.sh` (which merges `crontab` directly) or the cPanel Cron Jobs UI, and treat the adapter's per-project cron step as deprecated (see supervisor's global-watchdog design).
+**Implication:** do not depend on UAPI Cron on this host. The supervisor's global watchdog needs exactly one cron line — install it once via `bin/install.sh` (shell-level `crontab` merge — independent of the broken UAPI module) or manually in the host's own panel (on OrangeHost: the orangehost.com client panel, not cPanel), and treat the adapter's per-project cron step as deprecated (see supervisor's global-watchdog design).
