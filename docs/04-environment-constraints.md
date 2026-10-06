@@ -14,3 +14,18 @@
 ### The mindset shift
 
 On a VPS you ask "what can I install?" On shared hosting you ask "what is already running that I can orchestrate?" Apache, MySQL, cron, SSL issuance, DNS, and the Node runtime are all managed for you — that managed-ness is the product's leverage, not its limitation. Your control plane is an orchestrator of host features, exactly as Coolify is an orchestrator of Docker.
+
+## Measured on OrangeHost Micro (2026-10-05) — Week 1 verdict: GO
+
+PocketBase v0.36.5 downloaded (12.1 MB), extracted, and served on 127.0.0.1:8091:
+- `GET /api/health` → **HTTP 200**
+- Idle RSS: **27,744 KB (~27 MB)** — far under the 150 MB budget; ~6 instances fit comfortably in 1 GB with headroom for the supervisor and spikes.
+
+Substrate confirmed:
+- Disk: account dirs total ~1.6 GB of quota; host 2 TB at 50% (host-wide figure).
+- MySQL **8.0.43** (Community) — JSON fallback path confirmed, no native VECTOR (not 9.0).
+- PHP 8.1.34 (cli), Node v16.20.2, Python 3.6.8.
+- Shell limits generous: open files 1,048,576; max user processes unlimited; virtual memory unlimited. (Host-wide CPU/mem figures — 12 cores / 78 GB — are the node, not the LVE slice.)
+- PostgreSQL ruled out separately (see docs/11-vector-rag.md): installed but fenced off, no usable connection path.
+
+Survival re-check pending: process left running, to be re-verified after 1h+ to prove CloudLinux doesn't reap it.

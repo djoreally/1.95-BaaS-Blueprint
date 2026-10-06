@@ -148,3 +148,13 @@ MySQL/SQLite give exact scan, not ANN (HNSW/IVFFlat). When latency stops being a
 3. Query the in-memory index for vector IDs, then hydrate: SELECT ... WHERE id IN (...) for content, permissions, and tenant filtering.
 
 On Micro this is a per-project opt-in inside the 1 GB ceiling; on reseller it gets its own LVE envelope. Frontend contract unchanged: same `/api/search` endpoint.
+
+## Measured finding: PostgreSQL on OrangeHost Micro (2026-10-05)
+
+cPanel exposes a PostgreSQL Databases UI and `psql` 16.15 client exists on the box, with a server process answering on TCP 5432 — but it is **not usable from user accounts**:
+
+- `pg_hba.conf` rejects all TCP connections from cPanel users (`no pg_hba.conf entry for host "::1"/"127.0.0.1"`, no-encryption entries only); the server does not support SSL, so there is no TCP path without root access to edit pg_hba.
+- The Unix socket path is a dangling symlink: `/tmp/.s.PGSQL.5432 -> /var/run/postgres/.s.PGSQL.5432`, and `/var/run/postgres/` does not exist. No live socket exists anywhere under /tmp or /var/run.
+- The cPanel UI will create databases/users that can never be connected to.
+
+**Decision:** PostgreSQL/pgvector stays OUT of the substrate options. The vector ladder remains sqlite-vec (default) → MySQL fallbacks → hybrid HNSW scale exit. Revisit only if the host opens pg_hba or fixes the socket.
