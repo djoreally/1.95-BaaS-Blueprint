@@ -1,14 +1,14 @@
 /**
  * InvisibleDB — home page.
- * Full marketing site home: hero, Firebase trap, features, how-it-works,
+ * Full marketing site home: hero, bill trap, features, how-it-works,
  * comparison teaser, CTA band. Nav/footer come from the shared layout.
  */
 import type { Metadata } from 'next';
 import JsonLd from '../components/JsonLd';
 
-const title = 'Firebase Alternative for Indie Hackers | InvisibleDB';
+const title = 'PocketBase Hosting with an Agent OS | InvisibleDB';
 const description =
-  'The Firebase alternative for indie hackers: auth, realtime DB, storage, vector search in one SDK. $6.99/mo flat, first month $1. Your data stays yours.';
+  'InvisibleDB: hosted backend for web & mobile apps — auth, realtime DB, storage, vector search, and the ZeroAI agent OS. $6.99/mo flat, first month $1. Your data stays yours.';
 
 export const metadata: Metadata = {
   title,
@@ -43,7 +43,7 @@ export default function HomePage() {
       <section className="m-hero">
         <span className="m-kicker-pill">Built for web &amp; mobile devs</span>
         <h1>
-          Every backend Firebase gives you. <span className="hl">None of the bill.</span>
+          Every backend your app needs. <span className="hl">None of the ops.</span>
         </h1>
         <p className="sub">
           InvisibleDB is the invisible backend: auth, realtime database, file storage, and
@@ -65,9 +65,9 @@ export default function HomePage() {
       <section className="m-section">
         <div className="m-wrap">
           <div className="m-section-head">
-            <h2>The Firebase trap</h2>
+            <h2>The backend bill trap</h2>
             <p className="lede">
-              You start on the free tier. Then your app gets traction — and your backend bill
+              You start on a free tier. Then your app gets traction — and your backend bill
               goes from $0 to $500 overnight. Metered everything, per-seat premiums, and your
               data locked inside someone else&apos;s cloud.
             </p>
@@ -199,8 +199,8 @@ export default function HomePage() {
             <span className="kicker">Why switch</span>
             <h2>An honest comparison</h2>
             <p className="lede">
-              Firebase wins at massive scale. PocketHost has years of trust. We win on price,
-              on built-in AI search, and on the fact that your data is never held hostage.
+              PocketHost has years of trust. We win on price, on built-in AI search, on the
+              ZeroAI agent OS, and on the fact that your data is never held hostage.
             </p>
           </div>
           <div className="m-table-wrap">
@@ -209,28 +209,28 @@ export default function HomePage() {
                 <tr>
                   <th></th>
                   <th>InvisibleDB</th>
-                  <th>Firebase</th>
                   <th>PocketHost</th>
+                  <th>Firebase</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>Price</td>
                   <td className="win">$6.99/mo flat · first month $1</td>
-                  <td>Free, then scales to hundreds</td>
                   <td>$9.99/mo per backend</td>
+                  <td>Free, then scales to hundreds</td>
                 </tr>
                 <tr>
                   <td>Vector search</td>
                   <td className="win">Built in</td>
-                  <td>Separate service, separate bill</td>
                   <td>Not included</td>
+                  <td>Separate service, separate bill</td>
                 </tr>
                 <tr>
                   <td>Your data</td>
                   <td className="win">SQLite files — take them anywhere</td>
-                  <td>Locked in Google Cloud</td>
                   <td>Managed on their infra</td>
+                  <td>Locked in Google Cloud</td>
                 </tr>
                 <tr>
                   <td>AI-agent ready</td>

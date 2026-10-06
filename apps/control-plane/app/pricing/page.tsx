@@ -104,7 +104,7 @@ export default function PricingPage() {
           One price. <span className="hl">No meters.</span>
         </h1>
         <p className="sub">
-          Stop doing Firebase math. This is the whole pricing page — one seat, one flat
+          Stop doing backend math. This is the whole pricing page — one seat, one flat
           price, everything included.
         </p>
       </section>
@@ -162,34 +162,34 @@ export default function PricingPage() {
                 <tr>
                   <th></th>
                   <th>InvisibleDB</th>
-                  <th>Firebase</th>
                   <th>PocketHost</th>
+                  <th>Firebase</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>Price</td>
                   <td className="win">$6.99/mo flat · first month $1</td>
-                  <td>Free, then scales to hundreds</td>
                   <td>$9.99/mo per backend</td>
+                  <td>Free, then scales to hundreds</td>
                 </tr>
                 <tr>
                   <td>Vector search</td>
                   <td className="win">Built in</td>
-                  <td>Separate service, separate bill</td>
                   <td>Not included</td>
+                  <td>Separate service, separate bill</td>
                 </tr>
                 <tr>
                   <td>Your data</td>
                   <td className="win">SQLite files — take them anywhere</td>
-                  <td>Locked in Google Cloud</td>
                   <td>Managed on their infra</td>
+                  <td>Locked in Google Cloud</td>
                 </tr>
                 <tr>
                   <td>DevOps required</td>
                   <td className="win">Zero</td>
-                  <td>Zero, until the bill arrives</td>
                   <td>Zero</td>
+                  <td>Zero, until the bill arrives</td>
                 </tr>
                 <tr>
                   <td>AI-agent ready</td>
@@ -200,21 +200,21 @@ export default function PricingPage() {
                 <tr>
                   <td>Free tier</td>
                   <td className="win">Yes — dev tier</td>
-                  <td>Yes — Spark plan</td>
                   <td>No</td>
+                  <td>Yes — Spark plan</td>
                 </tr>
                 <tr>
                   <td>Track record</td>
                   <td>New — we earn it daily</td>
-                  <td className="win">Google-scale, since 2011</td>
                   <td className="win">Trusted since 2021</td>
+                  <td className="win">Google-scale, since 2011</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p className="lede" style={{ textAlign: 'center', margin: '2rem auto 0' }}>
-            Firebase wins at massive scale. PocketHost has years of trust. We win on price,
-            on built-in AI search, and on the fact that your data is never held hostage.
+            PocketHost has years of trust. We win on price, on built-in AI search, on the
+            ZeroAI agent OS, and on the fact that your data is never held hostage.
           </p>
           <p className="lede" style={{ textAlign: 'center', margin: '1.5rem auto 0' }}>
             Run your own numbers: the free{' '}
