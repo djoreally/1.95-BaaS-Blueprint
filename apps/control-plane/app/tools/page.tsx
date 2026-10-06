@@ -105,6 +105,49 @@ export default function ToolsIndexPage() {
         </div>
       </section>
 
+      {/* DEVELOPER TOOLS */}
+      <section className="m-section">
+        <div className="m-wrap">
+          <div className="m-section-head">
+            <h2>Developer tools</h2>
+            <p className="lede">
+              Eight mini utilities that run 100% in your browser — secret keys,
+              hashes, UUIDs, JWT decoding, and more. Nothing ever leaves the page.
+            </p>
+          </div>
+          <div className="m-grid">
+            {[
+              { href: '/tools/dev/secret-key-generator', title: 'Secret Key Generator', pitch: 'Cryptographically secure API keys in every format.' },
+              { href: '/tools/dev/hash-generator', title: 'Hash Generator', pitch: 'SHA-256, SHA-384, SHA-512 digests.' },
+              { href: '/tools/dev/uuid-generator', title: 'UUID Generator', pitch: 'Bulk UUID v4, up to 100 at once.' },
+              { href: '/tools/dev/jwt-decoder', title: 'JWT Decoder', pitch: 'Headers, claims, expiry — alg:none warnings.' },
+              { href: '/tools/dev/json-formatter', title: 'JSON Formatter', pitch: 'Format, minify, validate with error locations.' },
+              { href: '/tools/dev/base64', title: 'Base64 Encoder / Decoder', pitch: 'Unicode-safe, both directions.' },
+              { href: '/tools/dev/url-encoder', title: 'URL Encoder / Decoder', pitch: 'Percent-encoding for URLs and components.' },
+              { href: '/tools/dev/timestamp-converter', title: 'Timestamp Converter', pitch: 'Unix, ISO, and human time.' },
+            ].map((t) => (
+              <Link
+                key={t.href}
+                href={t.href}
+                className="m-card"
+                style={{ textDecoration: 'none', display: 'block' }}
+              >
+                <h3>{t.title}</h3>
+                <p>{t.pitch}</p>
+                <p style={{ marginTop: '1rem', color: 'var(--amber)', fontWeight: 700, fontSize: '0.92rem' }}>
+                  Open tool →
+                </p>
+              </Link>
+            ))}
+          </div>
+          <p style={{ textAlign: 'center', marginTop: '2rem' }}>
+            <Link href="/tools/dev" style={{ color: 'var(--amber)', fontWeight: 700 }}>
+              Browse all developer tools →
+            </Link>
+          </p>
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="m-cta-band" style={{ borderTop: '1px solid var(--line-soft)' }}>
         <h2>

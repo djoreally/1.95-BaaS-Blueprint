@@ -144,6 +144,9 @@ function SiteFooter() {
               <li>
                 <a href="/tools/vector-playground">Vector search demo</a>
               </li>
+              <li>
+                <a href="/tools/dev">Developer tools</a>
+              </li>
             </ul>
           </div>
           <div>

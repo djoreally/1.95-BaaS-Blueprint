@@ -18,6 +18,15 @@ const ROUTES = [
   '/tools/cost-comparator',
   '/tools/migration-estimator',
   '/tools/sqlite-estimator',
+  '/tools/dev',
+  '/tools/dev/secret-key-generator',
+  '/tools/dev/hash-generator',
+  '/tools/dev/uuid-generator',
+  '/tools/dev/base64',
+  '/tools/dev/url-encoder',
+  '/tools/dev/jwt-decoder',
+  '/tools/dev/json-formatter',
+  '/tools/dev/timestamp-converter',
   '/signup',
 ];
 
