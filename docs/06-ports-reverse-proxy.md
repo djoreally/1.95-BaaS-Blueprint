@@ -31,3 +31,9 @@ If `mod_proxy` is unavailable (some hosts disable the `[P]` flag), the fallback 
 - Never bind a project binary to a public interface; loopback only.
 - One subdomain per project, always — path-based multi-tenancy (/myapp/) breaks PocketBase asset and API URLs.
 - Record port ↔ project ↔ subdomain in one place; the control plane owns this registry.
+
+## Measured: the [P] proxy works (2026-10-06)
+
+Full chain proven live: `https://vibecode.momsoilchange.com/api/health` → Cloudflare → Apache → `.htaccess` mod_rewrite `[P]` → `127.0.0.1:18001` → PocketBase v0.36.5 → HTTP 200 `{"message":"API is healthy."}`. Verified from two independent external networks.
+
+The proxy rules coexist cleanly with existing hotlink-protection and PHP-handler rules — append-only, scoped to `/api/*` and `/_/*`. The `[P]` flag is allowed in `.htaccess` on OrangeHost shared hosting. This was the highest-risk assumption in the architecture; it is now retired.
