@@ -1,18 +1,28 @@
 import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
   title: '1.95 BaaS — Control Plane',
-  description: 'Coolify-style dashboard for $2 shared hosting',
+  description: 'Everything PocketHost does, on hosting you already pay $2 for.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: 'system-ui, sans-serif', margin: 0 }}>
-        <header style={{ padding: '1rem 2rem', borderBottom: '1px solid #eee' }}>
-          <strong>1.95 BaaS</strong> <span style={{ color: '#666' }}>control plane</span>
+      <body>
+        <header className="site-header">
+          <div className="wrap">
+            <a className="brand" href="/">
+              1.95 BaaS <span>control plane</span>
+            </a>
+            <nav>
+              <a href="/projects">Projects</a>
+              <a href="/projects/new">New project</a>
+              <a href="/connect">Connect hosting</a>
+            </nav>
+          </div>
         </header>
-        <main style={{ padding: '2rem' }}>{children}</main>
+        <main className="wrap">{children}</main>
       </body>
     </html>
   );

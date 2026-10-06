@@ -166,6 +166,21 @@ export class UapiClient {
 
   // ---------------------------------------------------------------- SubDomain
 
+  /** DomainInfo::list_domains — main + subdomains (read-only; preflight). */
+  async listDomains(): Promise<{ main: string; subdomains: string[] }> {
+    const data = await this.callUapi<{ main_domain: string; sub_domains: string[] }>(
+      'DomainInfo',
+      'list_domains',
+    );
+    return { main: data.main_domain, subdomains: data.sub_domains ?? [] };
+  }
+
+  /** Mysql::list_databases — database names (read-only; preflight). */
+  async listDatabases(): Promise<string[]> {
+    const data = await this.callUapi<Array<{ database: string }>>('Mysql', 'list_databases');
+    return (data ?? []).map((d) => d.database);
+  }
+
   /** SubDomain::addsubdomain — creates sub.example.com rooted at `dir`. */
   async addSubdomain(subdomain: string, rootDomain: string, dir: string): Promise<void> {
     await this.callUapi('SubDomain', 'addsubdomain', {
