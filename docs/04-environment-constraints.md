@@ -28,4 +28,4 @@ Substrate confirmed:
 - Shell limits generous: open files 1,048,576; max user processes unlimited; virtual memory unlimited. (Host-wide CPU/mem figures — 12 cores / 78 GB — are the node, not the LVE slice.)
 - PostgreSQL ruled out separately (see docs/11-vector-rag.md): installed but fenced off, no usable connection path.
 
-Survival re-check pending: process left running, to be re-verified after 1h+ to prove CloudLinux doesn't reap it.
+Survival re-check 2026-10-05 ~22:19 EDT (9.5 min elapsed): same PID, health HTTP 200, RSS steady at ~26 MB (26,420 KB vs 27,744 KB at start — no leak). CloudLinux does not reap it in the short term; the 2-minute watchdog covers the long term regardless.
