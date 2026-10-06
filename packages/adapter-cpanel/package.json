@@ -1,1 +1,19 @@
-{"description":"Typed cPanel UAPI + WHM API client and project provisioning orchestration for the 1.95 BaaS","license":"UNSET","main":"dist/index.js","name":"@baas-195/adapter-cpanel","private":true,"scripts":{"build":"tsc -p tsconfig.json"},"types":"dist/index.d.ts","version":"0.1.0"}
+{
+  "description": "Typed cPanel UAPI + WHM API client and project provisioning orchestration for the 1.95 BaaS",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  },
+  "license": "UNSET",
+  "main": "dist/index.js",
+  "name": "@baas-195/adapter-cpanel",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node --test \"dist-test/test/*.test.js\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "types": "dist/index.d.ts",
+  "version": "0.1.0"
+}

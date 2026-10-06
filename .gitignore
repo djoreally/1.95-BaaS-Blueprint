@@ -26,3 +26,4 @@ storage/
 # logs & OS
 *.log
 .DS_Store
+dist-test/
