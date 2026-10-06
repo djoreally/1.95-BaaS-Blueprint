@@ -1,0 +1,28 @@
+# deps
+node_modules/
+.pnp
+.pnp.js
+
+# builds
+.next/
+out/
+dist/
+build/
+
+# env & secrets — never commit
+.env
+.env.*
+!.env.example
+
+# on-box runtime data (lives on the hosting account, not in git)
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
+pb_data/
+storage/
+
+# logs & OS
+*.log
+.DS_Store

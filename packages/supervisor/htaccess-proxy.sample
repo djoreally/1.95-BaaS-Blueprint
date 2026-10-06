@@ -1,0 +1,23 @@
+# htaccess-proxy.sample — drop into the project's subdomain document root
+# (e.g. ~/public_html/myapp/.htaccess). Requires mod_proxy + mod_rewrite.
+# Replace 8091 with the project's allocated port from ports.registry.
+
+RewriteEngine On
+
+# API + admin UI go to the binary; static marketing pages can live
+# in the document root alongside this file.
+RewriteCond %{REQUEST_URI} ^/api/.* [OR]
+RewriteCond %{REQUEST_URI} ^/_/.*
+RewriteRule ^(.*)$ http://127.0.0.1:8091/$1 [P,L,QSA]
+
+# --- SSE note ---------------------------------------------------------------
+# PocketBase realtime uses Server-Sent Events over plain HTTP, which survives
+# this proxy. True WebSockets need mod_proxy_wstunnel — many shared hosts
+# disable it. Verify in preflight (docs/18-reference.md); degrade to polling
+# if absent.
+#
+# --- Fallback ---------------------------------------------------------------
+# If the host disables the [P] flag, the fallbacks in order are:
+#   1. cPanel's Node.js app selector for the app itself
+#   2. a tiny PHP reverse-proxy shim (functional, slower)
+# Both are signals to prefer the reseller tier, where you control the package.

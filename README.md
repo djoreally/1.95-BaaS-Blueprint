@@ -3,7 +3,14 @@ A Coolify-style platform for the tier Coolify cannot reach: cheap cPanel shared 
 
 ## The blueprint
 
-The full technical spec lives in [`docs/BaaS-Blueprint.pdf`](docs/BaaS-Blueprint.pdf) — 20 pages covering the Phase 0 resource diet, the non-root architecture (single-binary backends, Apache reverse-proxying, cron watchdog supervision instead of systemd), the multi-project pattern under 1 GB RAM, per-project SSL and domain wiring, Litestream-to-R2/B2 backups, the push-to-deploy pipeline, the control-plane MVP mapped to cPanel UAPI / WHM API calls, and the reseller tier economics ($0.76/seat at $19/mo for 25 cPanel accounts).
+The full technical spec lives in [`docs/`](docs/) as living documentation — 18 pages
+covering the Phase 0 resource diet, the non-root architecture (single-binary backends,
+Apache reverse-proxying, cron watchdog supervision instead of systemd), the multi-project
+pattern under 1 GB RAM, per-project SSL and domain wiring, vector search & RAG,
+Litestream-to-R2/B2 backups, the push-to-deploy pipeline, the control-plane MVP mapped
+to cPanel UAPI / WHM API calls, and the reseller tier economics ($0.76/seat at $19/mo
+for 25 cPanel accounts). A printable snapshot is kept at
+[`docs/BaaS-Blueprint.pdf`](docs/BaaS-Blueprint.pdf) — edit the markdown, not the PDF.
 
 ## How it works
 
@@ -22,3 +29,16 @@ The full technical spec lives in [`docs/BaaS-Blueprint.pdf`](docs/BaaS-Blueprint
 ## Status
 
 🚧 Early build. The blueprint is done; the code starts now.
+
+## Repository layout
+
+npm workspaces monorepo (`private: true`):
+
+```
+packages/adapter-cpanel/   Typed cPanel UAPI + WHM API client; createProject() orchestration
+packages/supervisor/       On-box bash kit: start/stop/watchdog, port registry, .htaccess proxy
+apps/control-plane/        Next.js dashboard (the moat) — MVP skeleton
+docs/                      Living documentation (18 pages) + printable PDF snapshot
+```
+
+`npm install` has not been run — dependencies are declared, not installed.

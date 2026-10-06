@@ -1,0 +1,9 @@
+# Port registry — single source of truth for project ↔ port allocation.
+# The control plane owns this file; the watchdog reads $APP_DIR/port.
+# Ranges (see docs/06-ports-reverse-proxy.md):
+#   8091–8099  PocketBase instances (one per project)
+#   8100–8199  Node/Passenger-adjacent custom apps
+#   8200+      Reserved: control-plane internals, Litestream metrics
+
+# project,port,fqdn
+# (empty — first project claims 8091)
