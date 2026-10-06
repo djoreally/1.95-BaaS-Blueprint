@@ -11,8 +11,8 @@ export default function DocsPage() {
           Ship in <span className="hl">five minutes.</span>
         </h1>
         <p className="sub">
-          Sign up, grab your keys, paste the snippet. If you&apos;ve ever added a package
-          to <span className="m-inline-code">pubspec.yaml</span>, you already know enough.
+          Sign up, grab your keys, paste the snippet. Web app or mobile app — if you
+          can make an HTTP call, you already know enough.
         </p>
       </section>
 
@@ -40,13 +40,37 @@ export default function DocsPage() {
               </p>
             </div>
 
-            <div className="m-doc-step">
-              <div className="step-label">Step 3 — Mobile SDK</div>
-              <h3>Connect your mobile app</h3>
+            <div className="m-doc-step" id="web">
+              <div className="step-label">Track A — Web apps</div>
+              <h3>Drop it into your frontend</h3>
               <p>
-                First-class Dart SDK for Flutter — auth, realtime data, and files
-                through one client. Prefer React Native, Swift, or Kotlin? Every
-                endpoint below is plain REST (Step 4):
+                Any framework — React, Next.js, Vue, or plain JavaScript. Auth, data,
+                and realtime subscriptions over HTTPS:
+              </p>
+              <pre className="code">{`// npm i invisibledb
+import { InvisibleDB } from 'invisibledb';
+
+const db = new InvisibleDB({
+  baseUrl: 'https://your-app.invisibledb.app',
+  apiKey: 'YOUR_API_KEY',
+});
+
+// Auth + realtime
+await db.auth.signIn('you@example.com', 'password');
+const messages = await db.collection('messages').getList();
+db.collection('messages').subscribe((e) => {
+  console.log('live update:', e.action);
+});`}</pre>
+            </div>
+
+            <div className="m-doc-step" id="mobile">
+              <div className="step-label">Track B — Mobile apps</div>
+              <h3>Built for the mobile situation</h3>
+              <p>
+                Mobile lives on flaky connections and backgrounded processes. The Dart
+                SDK is first-class — offline-tolerant realtime, auth that survives app
+                restarts, and the same one-call vector search for on-device AI features.
+                React Native, Swift, and Kotlin go through plain REST below:
               </p>
               <pre className="code">{`// pubspec.yaml
 dependencies:
@@ -71,7 +95,7 @@ db.collection('messages').subscribe((e) {
             </div>
 
             <div className="m-doc-step" id="rest">
-              <div className="step-label">Step 4 — REST API</div>
+              <div className="step-label">Universal — REST API</div>
               <h3>Plain HTTP when you need it</h3>
               <p>
                 Every SDK call maps to a REST endpoint. Anything that speaks HTTP —
@@ -89,7 +113,7 @@ curl -X POST https://your-app.invisibledb.app/api/collections/messages/records \
             </div>
 
             <div className="m-doc-step">
-              <div className="step-label">Step 5 — Vector search</div>
+              <div className="step-label">Universal — Vector search</div>
               <h3>AI search without a second bill</h3>
               <p>
                 Semantic search and RAG are built into every seat. Embed your documents
