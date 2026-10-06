@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '1.95 BaaS — Control Plane',
-  description: 'Everything PocketHost does, on hosting you already pay $2 for.',
+  title: 'InvisibleDB — The invisible backend for mobile apps',
+  description:
+    'Auth, realtime database, file storage, and built-in vector search through one Dart SDK. $6.99/mo, first seat $1 — and the database file is yours.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
