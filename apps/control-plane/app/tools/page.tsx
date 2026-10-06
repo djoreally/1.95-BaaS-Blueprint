@@ -3,7 +3,20 @@
  *
  * Card grid for the six free tools. Server component.
  */
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+const metaTitle = 'Free Backend Tools — Calculators & Live Demos | InvisibleDB';
+const metaDescription =
+  'Free backend tools from InvisibleDB: Firebase bill calculator, BaaS cost comparator, migration estimator, SQLite size estimator, and live playgrounds.';
+
+export const metadata: Metadata = {
+  title: metaTitle,
+  description: metaDescription,
+  alternates: { canonical: '/tools' },
+  openGraph: { type: 'website', url: '/tools', title: metaTitle, description: metaDescription, images: ['/opengraph-image'] },
+  twitter: { card: 'summary_large_image', title: metaTitle, description: metaDescription },
+};
 
 const TOOLS: { href: string; title: string; pitch: string; badge?: string }[] = [
   {
@@ -40,12 +53,6 @@ const TOOLS: { href: string; title: string; pitch: string; badge?: string }[] = 
   },
 ];
 
-export const metadata = {
-  title: 'Free tools — InvisibleDB',
-  description:
-    'Free tools for backend developers: Firebase bill calculator, cost comparator, migration estimator, SQLite size estimator, and live playgrounds.',
-};
-
 export default function ToolsIndexPage() {
   return (
     <div className="m-page">
@@ -65,6 +72,10 @@ export default function ToolsIndexPage() {
       {/* GRID */}
       <section className="m-section" style={{ borderTop: 'none', paddingTop: '1rem' }}>
         <div className="m-wrap">
+          <div className="m-section-head">
+            <h2>The toolbox</h2>
+            <p className="lede">Six tools, zero signup. Pick one and start calculating.</p>
+          </div>
           <div className="m-grid">
             {TOOLS.map((t) => (
               <Link

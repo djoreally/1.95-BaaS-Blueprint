@@ -2,6 +2,20 @@
  * InvisibleDB — the agent-native page.
  * "Firebase gives your agents a database. InvisibleDB gives them a memory and a conscience."
  */
+import type { Metadata } from 'next';
+
+const title = 'InvisibleDB for AI Agents — MCP Server, CLI & SDK';
+const description =
+  'InvisibleDB for AI agents: MCP server, CLI, and SDK for provisioning backends and querying data — plus ZeroAI agent OS with memory, audit, policy.';
+
+export const metadata: Metadata = {
+  title,
+  description,
+  alternates: { canonical: '/agents' },
+  openGraph: { type: 'website', url: '/agents', title, description, images: ['/opengraph-image'] },
+  twitter: { card: 'summary_large_image', title, description },
+};
+
 export default function AgentsPage() {
   return (
     <div className="m-page">

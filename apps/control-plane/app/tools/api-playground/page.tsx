@@ -9,6 +9,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import ToolCrossLinks from '../ToolCrossLinks';
 
 const DEMO = 'https://demo.innovarel.dev';
 
@@ -392,6 +393,10 @@ export default function ApiPlaygroundPage() {
               </>
             )}
           </div>
+        </div>
+
+        <div className="m-wrap" style={{ paddingBottom: '5rem' }}>
+          <ToolCrossLinks current="/tools/api-playground" />
         </div>
       </div>
     </div>

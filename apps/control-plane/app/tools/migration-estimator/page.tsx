@@ -7,6 +7,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import ToolCrossLinks from '../ToolCrossLinks';
 
 type BackendId = 'firebase' | 'supabase' | 'pockethost' | 'custom' | 'none';
 type Realtime = 'no' | 'yes' | 'heavy';
@@ -207,7 +208,7 @@ export default function MigrationEstimatorPage() {
         {/* Q1 */}
         <div className="tool-card">
           <div className="q">Question 1 of 5</div>
-          <h3>What are you migrating from?</h3>
+          <h2 className="h3">What are you migrating from?</h2>
           <div className="pill-row" style={{ marginTop: '1rem' }}>
             {BACKENDS.map((b) => (
               <button
@@ -226,7 +227,7 @@ export default function MigrationEstimatorPage() {
         {/* Q2–Q4 */}
         <div className="tool-card">
           <div className="q">Questions 2–4 of 5</div>
-          <h3>How big is it?</h3>
+          <h2 className="h3">How big is it?</h2>
           <div className="tool-inputs" style={{ marginTop: '1rem' }}>
             <div>
               <label htmlFor="collections" style={{ fontSize: '0.92rem', fontWeight: 600 }}>
@@ -273,7 +274,7 @@ export default function MigrationEstimatorPage() {
         {/* Q5 */}
         <div className="tool-card">
           <div className="q">Question 5 of 5</div>
-          <h3>Do you use realtime features?</h3>
+          <h2 className="h3">Do you use realtime features?</h2>
           <div className="pill-row" style={{ marginTop: '1rem' }}>
             {REALTIME_OPTIONS.map((r) => (
               <button
@@ -310,7 +311,7 @@ export default function MigrationEstimatorPage() {
 
             {/* PHASES */}
             <div className="tool-card">
-              <h3>Your migration plan</h3>
+              <h2 className="h3">Your migration plan</h2>
               <div style={{ marginTop: '1rem' }}>
                 {plan.phases.map((p) => (
                   <div className="phase" key={p.name}>
@@ -326,7 +327,7 @@ export default function MigrationEstimatorPage() {
 
             {/* TRANSFERS AS-IS */}
             <div className="tool-card">
-              <h3>What transfers as-is</h3>
+              <h2 className="h3">What transfers as-is</h2>
               <ul className="transfer" style={{ paddingLeft: '1.2rem', marginTop: '1rem' }}>
                 {TRANSFERS_AS_IS.map((t) => (
                   <li key={t.label}>
@@ -338,7 +339,7 @@ export default function MigrationEstimatorPage() {
 
             {/* CAVEATS */}
             <div className="tool-card">
-              <h3>Honest caveats for {BACKENDS.find((b) => b.id === backend)?.label}</h3>
+              <h2 className="h3">Honest caveats for {BACKENDS.find((b) => b.id === backend)?.label}</h2>
               <ul className="caveat" style={{ paddingLeft: '1.2rem', marginTop: '1rem' }}>
                 {BACKEND_CAVEATS[backend].map((c) => (
                   <li key={c}>{c}</li>
@@ -351,6 +352,8 @@ export default function MigrationEstimatorPage() {
               export tools your provider offers. They exclude rewriting business logic
               that lives in cloud functions or triggers.
             </p>
+
+            <ToolCrossLinks current="/tools/migration-estimator" />
 
             <div style={{ textAlign: 'center', marginTop: '2rem' }}>
               <a className="m-btn" href="/signup">

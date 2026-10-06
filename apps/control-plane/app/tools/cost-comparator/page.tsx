@@ -18,6 +18,7 @@ import {
   mauToSlider,
   sliderToMau,
 } from '../pricing';
+import ToolCrossLinks from '../ToolCrossLinks';
 
 function Slider(props: {
   label: string;
@@ -166,7 +167,7 @@ export default function CostComparatorPage() {
       <div className="m-wrap" style={{ maxWidth: '64rem', paddingBottom: '5rem' }}>
         {/* INPUTS */}
         <div className="tool-card">
-          <h3>Your usage</h3>
+          <h2 className="h3">Your usage</h2>
           <div className="input-grid">
             <Slider
               label="Seats / backends"
@@ -263,7 +264,7 @@ export default function CostComparatorPage() {
 
         {/* WHAT THE TABLE LEAVES OUT */}
         <div className="tool-card">
-          <h3>What the table leaves out</h3>
+          <h2 className="h3">What the table leaves out</h2>
           <ul className="notes" style={{ paddingLeft: '1.2rem', marginTop: '1rem' }}>
             <li>
               <strong>Firebase egress is not modeled.</strong> Downloads, function egress,
@@ -296,7 +297,7 @@ export default function CostComparatorPage() {
 
         {/* SOURCES */}
         <div className="tool-card">
-          <h3>Pricing sources</h3>
+          <h2 className="h3">Pricing sources</h2>
           <ul className="src-list">
             {SOURCES.map((s) => (
               <li key={s.label}>
@@ -320,7 +321,7 @@ export default function CostComparatorPage() {
           className="tool-card"
           style={{ borderColor: 'rgba(245,158,11,0.45)', background: 'var(--amber-dim)' }}
         >
-          <h3>What these numbers are — and aren&apos;t</h3>
+          <h2 className="h3">What these numbers are — and aren&apos;t</h2>
           <p className="fine" style={{ color: 'var(--muted)', marginBottom: 0, lineHeight: 1.7 }}>
             Estimates from public list prices, not quotes. Firebase rows use Standard
             edition us-central1 rates and exclude egress, deletes, functions, SMS, and
@@ -330,6 +331,8 @@ export default function CostComparatorPage() {
             and any provider can change prices at any time.
           </p>
         </div>
+
+        <ToolCrossLinks current="/tools/cost-comparator" />
 
         <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
           <a className="m-btn" href="/signup">

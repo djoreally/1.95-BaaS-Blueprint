@@ -1,9 +1,102 @@
 /**
  * InvisibleDB — pricing page.
  */
+import type { Metadata } from 'next';
+import JsonLd from '../../components/JsonLd';
+
+const title = 'Backend Pricing — $6.99/mo, First Seat $1 | InvisibleDB';
+const description =
+  'InvisibleDB pricing: one flat $6.99/mo per seat, first seat $1. Auth, realtime DB, storage, vector search, ZeroAI agent OS. No meters, no surprise bills.';
+
+export const metadata: Metadata = {
+  title,
+  description,
+  alternates: { canonical: '/pricing' },
+  openGraph: { type: 'website', url: '/pricing', title, description, images: ['/opengraph-image'] },
+  twitter: { card: 'summary_large_image', title, description },
+};
+
+/** Canonical citable price — SoftwareApplication + Offer (server-rendered). */
+const productJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'InvisibleDB',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Web, iOS, Android',
+  url: 'https://baas.innovarel.dev/pricing',
+  description,
+  offers: {
+    '@type': 'Offer',
+    price: '6.99',
+    priceCurrency: 'USD',
+    description: 'Per seat per month. First seat $1.',
+  },
+};
+
+/**
+ * FAQ structured data for machine readability.
+ * (Google retired FAQ rich results in May 2026 — this is index-signal only.)
+ */
+const faqJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: 'What do I actually get?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'A complete hosted backend per seat: user auth, a realtime database, file storage, a full admin UI, built-in vector search, and the ZeroAI agent OS — all reachable through one Dart SDK (plus JavaScript and REST).',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Can I leave with my data?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: "Yes. Your data lives in plain SQLite files. Export them any time, move them anywhere, run them yourself — we'd rather keep you with a great product than with lock-in.",
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Do I need DevOps experience?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'No. Sign up, copy your API keys, paste the snippet. There are no servers to configure, no containers to babysit, no YAML.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'What about scale?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'InvisibleDB is built for indie apps growing into real businesses — thousands to hundreds of thousands of users, not billions. If you outgrow it, your SQLite files come with you.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Is the free tier really free?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: "Yes. Run InvisibleDB on your own hosting while you develop — full features, no card, no trial clock. Hosted seats are $6.99/mo (first seat $1) when you're ready.",
+      },
+    },
+    {
+      '@type': 'Question',
+      name: "What's the ZeroAI agent OS?",
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'The deterministic layer around AI models that ships with every seat: persistent agent memory, a tamper-evident audit ledger, a permission broker, and lifecycle gates.',
+      },
+    },
+  ],
+};
+
 export default function PricingPage() {
   return (
     <div className="m-page">
+      <JsonLd data={productJsonLd} />
+      <JsonLd data={faqJsonLd} />
       {/* HERO */}
       <section className="m-hero">
         <span className="kicker">Pricing</span>
@@ -41,7 +134,7 @@ export default function PricingPage() {
           </div>
 
           <div style={{ maxWidth: '48rem', margin: '3rem auto 0' }}>
-            <h3 style={{ textAlign: 'center', marginBottom: '1rem' }}>Just want to tinker?</h3>
+            <h2 className="h3" style={{ textAlign: 'center', marginBottom: '1rem' }}>Just want to tinker?</h2>
             <p className="lede" style={{ textAlign: 'center', margin: '0 auto' }}>
               The <strong style={{ color: 'var(--ink)' }}>free dev tier</strong> lets you run
               InvisibleDB on your own hosting while you build — full features, no card, no
@@ -122,6 +215,13 @@ export default function PricingPage() {
           <p className="lede" style={{ textAlign: 'center', margin: '2rem auto 0' }}>
             Firebase wins at massive scale. PocketHost has years of trust. We win on price,
             on built-in AI search, and on the fact that your data is never held hostage.
+          </p>
+          <p className="lede" style={{ textAlign: 'center', margin: '1.5rem auto 0' }}>
+            Run your own numbers: the free{' '}
+            <a href="/tools/firebase-bill-calculator">Firebase bill calculator</a>{' '}
+            estimates your Firebase costs from public list prices, and the{' '}
+            <a href="/tools/cost-comparator">cost comparator</a> puts all four providers
+            on one table.
           </p>
         </div>
       </section>

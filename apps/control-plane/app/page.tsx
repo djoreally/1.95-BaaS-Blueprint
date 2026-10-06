@@ -3,9 +3,42 @@
  * Full marketing site home: hero, Firebase trap, features, how-it-works,
  * comparison teaser, CTA band. Nav/footer come from the shared layout.
  */
+import type { Metadata } from 'next';
+import JsonLd from '../components/JsonLd';
+
+const title = 'Firebase Alternative for Indie Hackers | InvisibleDB';
+const description =
+  'The Firebase alternative for indie hackers: auth, realtime DB, storage, vector search in one SDK. $6.99/mo flat, first seat $1. Your data stays yours.';
+
+export const metadata: Metadata = {
+  title,
+  description,
+  alternates: { canonical: '/' },
+  openGraph: { type: 'website', url: '/', title, description, images: ['/opengraph-image'] },
+  twitter: { card: 'summary_large_image', title, description },
+};
+
+/** Canonical citable price — SoftwareApplication + Offer (server-rendered). */
+const productJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'InvisibleDB',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Web, iOS, Android',
+  url: 'https://baas.innovarel.dev',
+  description,
+  offers: {
+    '@type': 'Offer',
+    price: '6.99',
+    priceCurrency: 'USD',
+    description: 'Per seat per month. First seat $1.',
+  },
+};
+
 export default function HomePage() {
   return (
     <div className="m-page">
+      <JsonLd data={productJsonLd} />
       {/* HERO */}
       <section className="m-hero">
         <span className="m-kicker-pill">Built for web &amp; mobile devs</span>
@@ -115,7 +148,7 @@ export default function HomePage() {
               <p>
                 MCP server, REST API, and CLI for AI-assisted development — plus the ZeroAI
                 agent OS: memory, audit trails, and permission gates for your agents.{' '}
-                <a href="/agents">Learn more →</a>
+                <a href="/agents">Learn about the agent OS →</a>
               </p>
             </div>
           </div>
@@ -211,6 +244,9 @@ export default function HomePage() {
           <p style={{ textAlign: 'center', marginTop: '2rem' }}>
             <a className="m-btn ghost" href="/pricing">
               Full pricing breakdown
+            </a>{' '}
+            <a className="m-btn ghost" href="/tools/cost-comparator">
+              Compare all four providers
             </a>
           </p>
         </div>

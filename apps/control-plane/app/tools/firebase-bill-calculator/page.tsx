@@ -18,6 +18,7 @@ import {
   mauToSlider,
   sliderToMau,
 } from '../pricing';
+import ToolCrossLinks from '../ToolCrossLinks';
 
 const FIREBASE_SOURCES = SOURCES.slice(0, 4);
 
@@ -166,7 +167,7 @@ export default function FirebaseBillCalculatorPage() {
         {/* INPUTS + BREAKDOWN */}
         <div className="calc-grid">
           <div className="tool-card">
-            <h3>Your app</h3>
+            <h2 className="h3">Your app</h2>
             <div style={{ marginTop: '1.25rem' }}>
               <Slider
                 label="Monthly active users"
@@ -212,7 +213,7 @@ export default function FirebaseBillCalculatorPage() {
           </div>
 
           <div className="tool-card">
-            <h3>The Firebase math</h3>
+            <h2 className="h3">The Firebase math</h2>
             <div className="breakdown" style={{ marginTop: '1rem' }}>
               {estimate.lines.map((l) => (
                 <div className="row" key={l.label}>
@@ -275,7 +276,7 @@ export default function FirebaseBillCalculatorPage() {
 
         {/* SOURCES */}
         <div className="tool-card" style={{ marginTop: '2.5rem' }}>
-          <h3>Pricing sources</h3>
+          <h2 className="h3">Pricing sources</h2>
           <ul className="src-list">
             {FIREBASE_SOURCES.map((s) => (
               <li key={s.label}>
@@ -299,7 +300,7 @@ export default function FirebaseBillCalculatorPage() {
           className="tool-card"
           style={{ borderColor: 'rgba(245,158,11,0.45)', background: 'var(--amber-dim)' }}
         >
-          <h3>What this estimate is — and isn&apos;t</h3>
+          <h2 className="h3">What this estimate is — and isn&apos;t</h2>
           <p className="fine" style={{ color: 'var(--muted)', marginBottom: 0, lineHeight: 1.7 }}>
             This is an estimate from public list prices, not a quote. It models Firestore
             document reads/writes, Auth MAUs, and file storage only. It does <em>not</em>{' '}
@@ -310,6 +311,8 @@ export default function FirebaseBillCalculatorPage() {
             bill depends on usage patterns, and Google can change prices at any time.
           </p>
         </div>
+
+        <ToolCrossLinks current="/tools/firebase-bill-calculator" />
 
         <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
           <a className="m-btn" href="/signup">

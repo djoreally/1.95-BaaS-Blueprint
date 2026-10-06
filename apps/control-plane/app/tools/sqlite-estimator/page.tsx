@@ -6,6 +6,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import ToolCrossLinks from '../ToolCrossLinks';
 
 interface Preset {
   id: string;
@@ -132,7 +133,7 @@ export default function SqliteEstimatorPage() {
       <div className="m-wrap" style={{ maxWidth: '60rem', paddingBottom: '5rem' }}>
         {/* TABLES */}
         <div className="tool-card">
-          <h3>Your tables</h3>
+          <h2 className="h3">Your tables</h2>
           <div style={{ marginTop: '1rem' }}>
             <div className="tbl-row head hide-sm">
               <span>Table type</span>
@@ -200,7 +201,7 @@ export default function SqliteEstimatorPage() {
 
         {/* BREAKDOWN */}
         <div className="tool-card">
-          <h3>The breakdown</h3>
+          <h2 className="h3">The breakdown</h2>
           <div className="breakdown" style={{ marginTop: '1rem' }}>
             {calc.lines.map((l) => (
               <div className="row" key={l.id}>
@@ -229,7 +230,7 @@ export default function SqliteEstimatorPage() {
 
         {/* HONEST NOTES */}
         <div className="tool-card">
-          <h3>Honest notes on the math</h3>
+          <h2 className="h3">Honest notes on the math</h2>
           <ul className="notes" style={{ paddingLeft: '1.2rem', marginTop: '1rem' }}>
             <li>
               <strong>15% page overhead is a rule of thumb, not a measurement.</strong> SQLite
@@ -259,6 +260,8 @@ export default function SqliteEstimatorPage() {
             </li>
           </ul>
         </div>
+
+        <ToolCrossLinks current="/tools/sqlite-estimator" />
 
         <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
           <a className="m-btn" href="/signup">

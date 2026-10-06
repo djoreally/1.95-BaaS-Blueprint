@@ -1,9 +1,45 @@
 /**
  * InvisibleDB — documentation / getting started.
  */
+import type { Metadata } from 'next';
+import JsonLd from '../../components/JsonLd';
+
+const title = 'Backend for Flutter Apps — Dart SDK Guide | InvisibleDB';
+const description =
+  'Backend for Flutter apps: the first-class Dart SDK for auth, realtime data, storage, and vector search. REST and JS included. Ship in five minutes.';
+
+export const metadata: Metadata = {
+  title,
+  description,
+  alternates: { canonical: '/docs' },
+  openGraph: { type: 'website', url: '/docs', title, description, images: ['/opengraph-image'] },
+  twitter: { card: 'summary_large_image', title, description },
+};
+
+/** Breadcrumb structured data (server-rendered). */
+const breadcrumbJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Home',
+      item: 'https://baas.innovarel.dev',
+    },
+    {
+      '@type': 'ListItem',
+      position: 2,
+      name: 'Documentation',
+      item: 'https://baas.innovarel.dev/docs',
+    },
+  ],
+};
+
 export default function DocsPage() {
   return (
     <div className="m-page">
+      <JsonLd data={breadcrumbJsonLd} />
       {/* HERO */}
       <section className="m-hero">
         <span className="kicker">Documentation</span>
@@ -19,6 +55,14 @@ export default function DocsPage() {
       {/* STEPS */}
       <section className="m-section" style={{ borderTop: 'none', paddingTop: '1rem' }}>
         <div className="m-wrap">
+          <div className="m-section-head">
+            <span className="kicker">Get set up</span>
+            <h2>Pick your track</h2>
+            <p className="lede">
+              Web or mobile — the first two steps are the same, then choose the SDK
+              that fits your app.
+            </p>
+          </div>
           <div className="m-docs-grid">
             <div className="m-doc-step">
               <div className="step-label">Step 1 — Sign up</div>
@@ -135,6 +179,13 @@ curl -X POST https://your-app.invisibledb.app/api/vector/query \\
               </p>
             </div>
           </div>
+
+          <p className="lede" style={{ textAlign: 'center', margin: '3rem auto 0' }}>
+            Want to touch it before you sign up? Fire real requests at a live backend
+            in the <a href="/tools/api-playground">API playground</a>, or watch
+            semantic search work in the{' '}
+            <a href="/tools/vector-playground">vector search demo</a>.
+          </p>
         </div>
       </section>
 

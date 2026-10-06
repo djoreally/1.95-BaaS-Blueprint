@@ -9,6 +9,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import ToolCrossLinks from '../ToolCrossLinks';
 
 /* ----------------------------- toy vector model ----------------------------- */
 
@@ -465,6 +466,8 @@ export default function VectorPlaygroundPage() {
             second bill.
           </p>
         </div>
+
+        <ToolCrossLinks current="/tools/vector-playground" />
       </div>
     </div>
   );
