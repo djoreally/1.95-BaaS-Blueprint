@@ -125,21 +125,35 @@ export class UapiClient {
 
     const url = `https://${this.cfg.host}:2083/execute/${module}/${func}`;
     // POST with a form body: keeps passwords out of URLs (and server logs).
-    const res = await this.fetchImpl(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `cpanel ${this.cfg.user}:${this.cfg.apiToken}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Baas-Cpanel-Api-Version': this.apiVersion,
-      },
-      body: new URLSearchParams(params).toString(),
-    });
-    if (!res.ok) throw new UapiError(module, func, `HTTP ${res.status}`, res.status);
-    const body = (await res.json()) as UapiEnvelope<T>;
-    if (body.status !== 1) {
-      throw new UapiError(module, func, (body.errors ?? ['unknown error']).join('; '));
+    // Retry transport-level failures (killed connections, timeouts) with
+    // backoff — shared hosting and egress proxies throttle bursty API use.
+    // API-level errors (HTTP 4xx/5xx, status 0) are deterministic: no retry.
+    const delaysMs = [5000, 15000, 30000];
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+      try {
+        const res = await this.fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `cpanel ${this.cfg.user}:${this.cfg.apiToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Baas-Cpanel-Api-Version': this.apiVersion,
+          },
+          body: new URLSearchParams(params).toString(),
+        });
+        if (!res.ok) throw new UapiError(module, func, `HTTP ${res.status}`, res.status);
+        const body = (await res.json()) as UapiEnvelope<T>;
+        if (body.status !== 1) {
+          throw new UapiError(module, func, (body.errors ?? ['unknown error']).join('; '));
+        }
+        return body.data;
+      } catch (e) {
+        if (e instanceof UapiError) throw e; // deterministic — don't retry
+        lastErr = e;
+        if (attempt < delaysMs.length) await new Promise((r) => setTimeout(r, delaysMs[attempt]));
+      }
     }
-    return body.data;
+    throw new UapiError(module, func, `transport failed after retries: ${(lastErr as Error)?.message ?? lastErr}`);
   }
 
   /** Run the version probe (if configured) and refuse on drift. Idempotent. */

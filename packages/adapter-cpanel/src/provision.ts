@@ -72,6 +72,14 @@ export interface ProjectProvisioned {
   docRoot: string;
   /** true when AutoSSL hadn't issued the cert within sslTimeoutMs */
   sslPending: boolean;
+  /**
+   * true when the per-project watchdog cron could not be installed.
+   * Non-fatal: the supervisor runs a single global watchdog (installed once
+   * via bin/install.sh or the host's panel), so per-project cron is legacy.
+   * On hosts where UAPI Cron is broken (e.g. OrangeHost server306, missing
+   * Cpanel::API::Cron), this is expected — the global watchdog covers it.
+   */
+  cronSkipped: boolean;
   dryRun: boolean;
   /** audit trail (live) or provisioning plan (dry-run), secrets scrubbed */
   callLog: readonly UapiCallRecord[];
@@ -161,7 +169,9 @@ export async function createProject(cfg: UapiConfig, input: CreateProjectInput):
     sslPending = true;
   }
 
-  // 5. watchdog cron
+  // 5. watchdog cron (legacy per-project line; global watchdog is the real
+  //    supervisor — a failure here is non-fatal by design)
+  let cronSkipped = false;
   try {
     await uapi.addCronLine(watchdogCmd, input.cronSchedule);
     undone.push({
@@ -169,7 +179,7 @@ export async function createProject(cfg: UapiConfig, input: CreateProjectInput):
       undo: () => uapi.removeCronLinesMatching(`apps/${input.name}/watchdog.sh`).then(() => undefined),
     });
   } catch (e) {
-    return abort('cron', e);
+    cronSkipped = true;
   }
 
   return {
@@ -179,6 +189,7 @@ export async function createProject(cfg: UapiConfig, input: CreateProjectInput):
     db: { name: db, user },
     docRoot,
     sslPending,
+    cronSkipped,
     dryRun: input.dryRun ?? cfg.dryRun ?? false,
     callLog: uapi.getCallLog(),
   };

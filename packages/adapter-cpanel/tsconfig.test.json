@@ -1,1 +1,16 @@
-{"compilerOptions":{"declaration":false,"outDir":"dist-test","sourceMap":false,"types":["node"]},"extends":"./tsconfig.json","include":["src/**/*","test/**/*"]}
+{
+  "compilerOptions": {
+    "declaration": false,
+    "outDir": "dist-test",
+    "sourceMap": false,
+    "types": [
+      "node"
+    ],
+    "rootDir": "."
+  },
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/**/*",
+    "test/**/*"
+  ]
+}
