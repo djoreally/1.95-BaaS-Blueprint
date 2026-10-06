@@ -87,3 +87,11 @@ Tests live in `test/` (`node:test` + `node:assert/strict`, `test/helpers.ts`
 provides the mock-fetch router). There are no live-connection tests by
 design — no credentials exist for that yet. When they do, add an
 integration suite gated behind an env flag, never in the default run.
+
+## Live-test finding (2026-10-05, OrangeHost server306)
+
+Full `createProject` → `deleteProject` smoke test run live: subdomain ✓, MySQL db/user/privileges ✓, SSL step ✓ — then failed at the `cron` step because the **server's `Cpanel::API::Cron` Perl module is missing** (`Can't locate Cpanel/API/Cron.pm`). This is an OrangeHost server-side issue, not an adapter bug.
+
+Critically, the failure proved the rollback path for real: all 5 created resources were torn down automatically, zero leftovers verified via list calls.
+
+**Implication:** do not depend on UAPI Cron on this host. The supervisor's global watchdog needs exactly one cron line — install it once via `bin/install.sh` (which merges `crontab` directly) or the cPanel Cron Jobs UI, and treat the adapter's per-project cron step as deprecated (see supervisor's global-watchdog design).
