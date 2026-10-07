@@ -77,10 +77,15 @@ export async function createBillingPortal(userId: string) {
   });
   if (!subscription?.stripeCustomerId) throw new Error('No Stripe customer exists for this account.');
 
-  return stripePost('/billing_portal/sessions', {
+  const params: Record<string, string> = {
     customer: subscription.stripeCustomerId,
     return_url: `${appUrl()}/projects`,
-  }) as Promise<{ url: string }>;
+  };
+  if (process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim()) {
+    params.configuration = process.env.STRIPE_PORTAL_CONFIGURATION_ID.trim();
+  }
+
+  return stripePost('/billing_portal/sessions', params) as Promise<{ url: string }>;
 }
 
 type StripeEvent = {
@@ -139,7 +144,6 @@ async function upsertSubscriptionFromCheckout(event: StripeEvent, session: any) 
   const customerId = typeof session?.customer === 'string' ? session.customer : null;
   if (!userId || !subscriptionId) return;
 
-  // Checkout completion alone is not entitlement. The first invoice must actually be paid.
   const paid = session?.payment_status === 'paid' || session?.payment_status === 'no_payment_required';
   const existing = await prisma.billingSubscription.findUnique({ where: { stripeSubscriptionId: subscriptionId } });
   if (existing && !eventIsNewer(existing.lastStripeEventAt, event.created)) return;
