@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# VPS provision poller — host cron every 2 minutes.
+# Pulls pending jobs from the control plane, runs bin/provision|deprovision,
+# reports results back. The box never talks to Stripe.
+#
+# Env (in /srv/idb/.env): CONTROL_PLANE_URL, VPS_API_SECRET
+# Cron: */2 * * * * root /srv/idb/bin/poll-provision >>/var/log/idb-poll.log 2>&1
+set -euo pipefail
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+# shellcheck source=/dev/null
+source "$IDB_ROOT/.env"
+
+AUTH="Authorization: Bearer $VPS_API_SECRET"
+RESP="$(curl -s -m 20 -H "$AUTH" "$CONTROL_PLANE_URL/api/vps/requests")"
+
+echo "$RESP" | python3 -c "
+import json, sys, subprocess, urllib.request
+
+IDB_ROOT = '$IDB_ROOT'
+AUTH = 'Bearer $VPS_API_SECRET'
+CP = '$CONTROL_PLANE_URL'
+
+def report(rid, ok, detail=''):
+    req = urllib.request.Request(
+        CP + '/api/vps/requests',
+        data=json.dumps({'id': rid, 'ok': ok, 'detail': detail}).encode(),
+        headers={'Authorization': AUTH, 'Content-Type': 'application/json'},
+        method='POST')
+    urllib.request.urlopen(req, timeout=20).read()
+
+try:
+    data = json.loads(sys.stdin.read())
+except Exception as e:
+    sys.exit(f'bad queue response: {e}')
+
+for r in data.get('requests', []):
+    rid, kind, email, slug = r['id'], r['kind'], r['email'], r['slug']
+    try:
+        if kind == 'provision':
+            out = subprocess.run([IDB_ROOT + '/bin/provision', slug, email],
+                                 capture_output=True, text=True, timeout=300)
+        else:
+            out = subprocess.run([IDB_ROOT + '/bin/deprovision', slug],
+                                 capture_output=True, text=True, timeout=300)
+        ok = out.returncode == 0
+        # Never send secrets back: strip key material from the log tail.
+        tail = (out.stdout + out.stderr)[-500:].replace('idb_live_', 'idb_live_***')
+        report(rid, ok, tail if not ok else 'provisioned')
+        print(('ok ' if ok else 'FAIL ') + kind + ' ' + slug)
+    except Exception as e:
+        report(rid, False, str(e)[:500])
+        print('FAIL ' + kind + ' ' + slug + ': ' + str(e)[:200])
+"

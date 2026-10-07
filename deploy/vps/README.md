@@ -62,6 +62,11 @@ DNS: wildcard `*.BASE_DOMAIN` → box IP (or per-customer A records).
 15 2 * * * root rsync -a --delete /srv/idb/backups/ orangehost:/home/<user>/idb-backups/
 ```
 
+```cron
+# /etc/cron.d/idb-poll — provision queue poller, every 2 min
+*/2 * * * * root /srv/idb/bin/poll-provision >>/var/log/idb-poll.log 2>&1
+```
+
 ## 6. Monitoring
 
 - `docker ps` — every `idb-*` container must be `Up`; Caddy reloads are zero-downtime.

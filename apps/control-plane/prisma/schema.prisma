@@ -65,3 +65,30 @@ model Project {
   @@index([userId])
   @@index([connectionId])
 }
+
+// ---- Hosted billing (Stripe) + VPS provision queue ----
+
+model Subscription {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  stripeCustomerId String   @unique
+  stripeSubId      String?  @unique
+  status           String   @default("active") // active | past_due | cancelled
+  slug             String?  @unique // <slug>.BASE_DOMAIN on the VPS
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model ProvisionRequest {
+  id        String   @id @default(cuid())
+  kind      String   // "provision" | "deprovision"
+  email     String
+  slug      String
+  status    String   @default("pending") // pending | claimed | done | failed
+  attempts  Int      @default(0)
+  result    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
