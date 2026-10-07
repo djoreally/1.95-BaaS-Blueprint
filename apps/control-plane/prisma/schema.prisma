@@ -3,7 +3,7 @@
 // The control plane's OWN bookkeeping lives here (Neon Postgres).
 // Customer DATA stays on the customer's hosting — SQLite/MySQL files on
 // the box. This DB only remembers who you are, which hosting you
-// connected, and what you provisioned.
+// connected, what you provisioned, and hosted-plan entitlement state.
 //
 // DATABASE_URL comes from the environment (Neon). Never commit it.
 generator client {
@@ -22,22 +22,23 @@ model User {
   passwordHash String?
   createdAt    DateTime @default(now())
 
-  connections HostingConnection[]
-  projects    Project[]
+  connections  HostingConnection[]
+  projects     Project[]
+  subscriptions BillingSubscription[]
 }
 
 model HostingConnection {
-  id               String   @id @default(cuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label            String?
-  host             String
-  username         String
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label             String?
+  host              String
+  username          String
   // cPanel API token, AES-256-GCM encrypted. NEVER plaintext.
-  apiTokenEncrypted String  @db.Text
-  mainDomain       String?
-  domains          String[] @default([])
-  createdAt        DateTime @default(now())
+  apiTokenEncrypted String   @db.Text
+  mainDomain        String?
+  domains           String[] @default([])
+  createdAt         DateTime @default(now())
 
   projects Project[]
 
@@ -64,4 +65,23 @@ model Project {
 
   @@index([userId])
   @@index([connectionId])
+}
+
+model BillingSubscription {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?  @unique
+  stripePriceId         String?
+  status                String   @default("incomplete")
+  entitlementActive     Boolean  @default(false)
+  cancelAtPeriodEnd     Boolean  @default(false)
+  currentPeriodEnd      DateTime?
+  lastStripeEventAt     DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId])
+  @@index([stripeCustomerId])
 }
