@@ -20,7 +20,7 @@ CREATE TABLE "HostingConnection" (
     "username" TEXT NOT NULL,
     "apiTokenEncrypted" TEXT NOT NULL,
     "mainDomain" TEXT,
-    "domains" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "domains" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "HostingConnection_pkey" PRIMARY KEY ("id")
