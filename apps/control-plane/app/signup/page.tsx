@@ -44,7 +44,7 @@ export default async function Signup({
       secure: process.env.NODE_ENV === 'production',
     });
 
-    redirect(hostingMode === 'HOSTED' ? '/projects/new' : '/connect');
+    redirect(hostingMode === 'HOSTED' ? '/api/billing/checkout' : '/connect');
   }
 
   const hosted = requestedMode === 'HOSTED';
@@ -53,7 +53,7 @@ export default async function Signup({
       <h2>{hosted ? 'Start your hosted backend' : 'Create your account'}</h2>
       <p style={{ color: 'var(--muted)' }}>
         {hosted
-          ? 'We host and manage the backend. No server or cPanel account required.'
+          ? 'Create your account, then pay $1 for your first month. After that your hosted seat is $6.99/month.'
           : 'Connect hosting you already own and run InvisibleDB there.'}
       </p>
       {params.error && <div className="callout warn">Enter a valid name, email, and password of at least 10 characters.</div>}
@@ -62,7 +62,7 @@ export default async function Signup({
         <div className="field"><label htmlFor="name">Your name</label><input id="name" name="name" required autoComplete="name" /></div>
         <div className="field"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required autoComplete="email" /></div>
         <div className="field"><label htmlFor="password">Password</label><input id="password" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
-        <button className="btn" type="submit">{hosted ? 'Create account →' : 'Create account →'}</button>
+        <button className="btn" type="submit">{hosted ? 'Create account & continue to payment →' : 'Create account →'}</button>
       </form>
       <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: '1rem' }}>
         Already have an account? <a href="/login">Sign in</a>
