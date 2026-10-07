@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { listJobs, startProvisioning } from '../../../lib/projects';
 import {
   getByohConnection,
@@ -17,12 +18,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json()) as {
-    name?: string;
-    domain?: string;
-    hostingMode?: string;
-  };
-  const hostingMode = normalizeHostingMode(body.hostingMode);
+  const body = (await req.json()) as { name?: string; domain?: string };
+  const jar = await cookies();
+  const hostingMode = normalizeHostingMode(jar.get('baas_hosting_mode')?.value);
   const conn = hostingMode === 'HOSTED' ? await getPlatformConnection() : await getByohConnection();
 
   if (!conn) {
