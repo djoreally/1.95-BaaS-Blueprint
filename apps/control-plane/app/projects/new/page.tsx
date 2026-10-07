@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { currentUser } from '../../../lib/auth';
+import { hasHostedEntitlement } from '../../../lib/billing';
 import { getByohConnection, getPlatformConnection, hostedBaseDomain, normalizeHostingMode } from '../../../lib/hosting';
 import NewProjectForm from '../../../components/NewProjectForm';
 
@@ -12,6 +13,11 @@ export default async function NewProjectPage() {
 
   const jar = await cookies();
   const hostingMode = normalizeHostingMode(jar.get('baas_hosting_mode')?.value);
+
+  if (hostingMode === 'HOSTED' && !(await hasHostedEntitlement(user.id))) {
+    redirect('/api/billing/checkout');
+  }
+
   const conn = hostingMode === 'HOSTED' ? await getPlatformConnection() : await getByohConnection(user.id);
 
   if (!conn) {
