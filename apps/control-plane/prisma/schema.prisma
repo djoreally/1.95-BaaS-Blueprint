@@ -20,6 +20,7 @@ model User {
   email        String   @unique
   name         String?
   passwordHash String?
+  role         String   @default("user") // "user" | "admin"
   createdAt    DateTime @default(now())
 
   connections HostingConnection[]
