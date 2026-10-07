@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const job = await startUserProvisioning(user.id, name, domain, conn.id);
+    const job = await startUserProvisioning(user.id, name, domain, conn);
     return NextResponse.json({ id: job.id, hostingMode }, { status: 202 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
