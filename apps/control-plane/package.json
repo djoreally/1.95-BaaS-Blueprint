@@ -12,7 +12,7 @@
   "name": "control-plane",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "prisma migrate deploy && next build",
     "dev": "next dev",
     "postinstall": "prisma generate"
   },
