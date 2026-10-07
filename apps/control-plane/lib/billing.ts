@@ -35,9 +35,7 @@ async function stripePost(path: string, params: Record<string, string>): Promise
     cache: 'no-store',
   });
   const payload = await res.json();
-  if (!res.ok) {
-    throw new Error(payload?.error?.message || `Stripe request failed (${res.status})`);
-  }
+  if (!res.ok) throw new Error(payload?.error?.message || `Stripe request failed (${res.status})`);
   return payload;
 }
 
@@ -131,13 +129,21 @@ function subscriptionIdFromInvoice(invoice: any): string | null {
   return typeof nested === 'string' ? nested : null;
 }
 
+function eventIsNewer(lastStripeEventAt: Date | null | undefined, created: number): boolean {
+  return !lastStripeEventAt || created * 1000 >= lastStripeEventAt.getTime();
+}
+
 async function upsertSubscriptionFromCheckout(event: StripeEvent, session: any) {
   const userId = session?.client_reference_id || session?.metadata?.user_id;
   const subscriptionId = typeof session?.subscription === 'string' ? session.subscription : null;
   const customerId = typeof session?.customer === 'string' ? session.customer : null;
   if (!userId || !subscriptionId) return;
 
-  const paid = session?.payment_status === 'paid' || session?.status === 'complete';
+  // Checkout completion alone is not entitlement. The first invoice must actually be paid.
+  const paid = session?.payment_status === 'paid' || session?.payment_status === 'no_payment_required';
+  const existing = await prisma.billingSubscription.findUnique({ where: { stripeSubscriptionId: subscriptionId } });
+  if (existing && !eventIsNewer(existing.lastStripeEventAt, event.created)) return;
+
   await prisma.billingSubscription.upsert({
     where: { stripeSubscriptionId: subscriptionId },
     update: {
@@ -164,6 +170,9 @@ async function upsertSubscriptionObject(event: StripeEvent, subscription: any) {
   const userId = subscription?.metadata?.user_id;
   const subscriptionId = subscription?.id;
   if (!userId || !subscriptionId) return;
+  const existing = await prisma.billingSubscription.findUnique({ where: { stripeSubscriptionId: subscriptionId } });
+  if (existing && !eventIsNewer(existing.lastStripeEventAt, event.created)) return;
+
   const status = String(subscription?.status || 'incomplete');
   const entitlementActive = status === 'active' || status === 'trialing';
   const priceId = subscription?.items?.data?.[0]?.price?.id || process.env.STRIPE_PRICE_ID || null;
@@ -197,7 +206,10 @@ async function upsertSubscriptionObject(event: StripeEvent, subscription: any) {
 async function applyInvoiceState(event: StripeEvent, invoice: any, paid: boolean) {
   const subscriptionId = subscriptionIdFromInvoice(invoice);
   if (!subscriptionId) return;
-  await prisma.billingSubscription.updateMany({
+  const existing = await prisma.billingSubscription.findUnique({ where: { stripeSubscriptionId: subscriptionId } });
+  if (!existing || !eventIsNewer(existing.lastStripeEventAt, event.created)) return;
+
+  await prisma.billingSubscription.update({
     where: { stripeSubscriptionId: subscriptionId },
     data: {
       status: paid ? 'active' : 'past_due',
