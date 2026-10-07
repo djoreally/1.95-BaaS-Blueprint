@@ -68,9 +68,49 @@ export async function getConnectionById(id: string): Promise<HostingConnection |
   return row ? toConnection(row) : null;
 }
 
-/** Existing platform cPanel connection used by managed HOSTED projects. */
+function platformConnectionFromEnv(): Omit<HostingConnection, 'id' | 'ownerUserId'> | null {
+  const host = process.env.PLATFORM_CPANEL_HOST?.trim();
+  const user = process.env.PLATFORM_CPANEL_USER?.trim();
+  const apiToken = process.env.PLATFORM_CPANEL_API_TOKEN?.trim();
+  const mainDomain = process.env.PLATFORM_CPANEL_MAIN_DOMAIN?.trim();
+
+  // Recovery is all-or-nothing. Never create a partial platform connection.
+  if (!host || !user || !apiToken || !mainDomain) return null;
+
+  const configuredDomains = (process.env.PLATFORM_CPANEL_DOMAINS || '')
+    .split(',')
+    .map((domain) => domain.trim().toLowerCase())
+    .filter(Boolean);
+  const domains = Array.from(new Set([mainDomain.toLowerCase(), ...configuredDomains]));
+
+  return {
+    host: host.replace(/^https?:\/\//, '').split('/')[0].split(':')[0],
+    user,
+    apiToken,
+    mainDomain: mainDomain.toLowerCase(),
+    domains,
+    connectedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Existing platform cPanel connection used by managed HOSTED projects.
+ *
+ * The encrypted Neon row is authoritative during normal operation. If it is
+ * unexpectedly missing, a complete PLATFORM_CPANEL_* recovery configuration
+ * can bootstrap the row again. This keeps provisioning tied to a real DB row
+ * (and therefore a valid Project.connectionId FK) instead of using a transient
+ * in-memory fallback.
+ */
 export async function getConnection(): Promise<HostingConnection | null> {
   const owner = await getPlatformOwner();
+  const stored = await getConnectionForUser(owner.id);
+  if (stored) return stored;
+
+  const recovery = platformConnectionFromEnv();
+  if (!recovery) return null;
+
+  await setConnectionForUser(owner.id, recovery);
   return getConnectionForUser(owner.id);
 }
 
