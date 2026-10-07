@@ -57,6 +57,17 @@ export async function getConnectionForUser(userId: string): Promise<HostingConne
   return row ? toConnection(row) : null;
 }
 
+/**
+ * Resolve a connection already bound to an owned project. Callers must verify
+ * project ownership before using this function; it intentionally does not
+ * require the connection owner to match the customer because HOSTED projects
+ * are bound to the platform owner's connection.
+ */
+export async function getConnectionById(id: string): Promise<HostingConnection | null> {
+  const row = await prisma.hostingConnection.findUnique({ where: { id } });
+  return row ? toConnection(row) : null;
+}
+
 /** Existing platform cPanel connection used by managed HOSTED projects. */
 export async function getConnection(): Promise<HostingConnection | null> {
   const owner = await getPlatformOwner();
