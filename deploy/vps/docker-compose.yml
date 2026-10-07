@@ -1,0 +1,41 @@
+# InvisibleDB VPS runtime — one PocketBase per customer, Caddy on the edge.
+#
+# Layout on the box:
+#   /srv/idb/            compose project root (this directory's contents)
+#   /srv/idb/backups/    nightly SQLite dumps (host cron -> bin/backup)
+#   /srv/idb/keys/       per-customer API keys (<slug>.key, 0600)
+#
+# Customer traffic: <slug>.BASE_DOMAIN -> Caddy -> idb-<slug> container.
+# The auth gateway (Phase 2) sits between Caddy and PocketBase and validates
+# `Authorization: Bearer <apiKey>`.
+#
+# Per-customer PocketBase containers are created by bin/provision (not listed
+# here — they join the idb-net network at provision time).
+
+name: idb
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/sites:/etc/caddy/sites:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:?set BASE_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    networks:
+      - idb-net
+
+networks:
+  idb-net:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:

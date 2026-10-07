@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Provision one InvisibleDB customer on this VPS.
+# Usage: provision <slug> <admin-email>
+#   slug: lowercase [a-z0-9-], becomes <slug>.BASE_DOMAIN
+# Result: running PocketBase container, Caddy route with TLS, API key file,
+#         and the customer snippet printed to stdout.
+set -euo pipefail
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+SLUG="${1:?usage: provision <slug> <admin-email>}"
+ADMIN_EMAIL="${2:?usage: provision <slug> <admin-email>}"
+
+if [[ ! "$SLUG" =~ ^[a-z0-9-]+$ ]]; then echo "bad slug: $SLUG" >&2; exit 1; fi
+# shellcheck source=/dev/null
+source "$IDB_ROOT/.env"
+
+NAME="idb-$SLUG"
+VOL="$NAME-data"
+HOST="$SLUG.$BASE_DOMAIN"
+KEY_FILE="$IDB_ROOT/keys/$SLUG.key"
+
+if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
+  echo "already provisioned: $NAME" >&2; exit 1
+fi
+
+mkdir -p "$IDB_ROOT/keys" "$IDB_ROOT/caddy/sites"
+chmod 700 "$IDB_ROOT/keys"
+
+# 1. API key — the single-key model. Stored 0600, never logged.
+API_KEY="idb_live_$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)"
+printf '%s' "$API_KEY" > "$KEY_FILE"
+chmod 600 "$KEY_FILE"
+
+# 2. Data volume + container on the shared customer network.
+docker volume create "$VOL" >/dev/null
+docker run -d --name "$NAME" \
+  --restart unless-stopped \
+  --network idb_idb-net \
+  --memory 256m --memory-swap 256m \
+  --pids-limit 128 \
+  -v "$VOL:/pb/data" \
+  idb-pocketbase:latest \
+  serve --http=0.0.0.0:8090 --dir=/pb/data \
+  >/dev/null
+
+# 3. Wait for health, then bootstrap the superuser (used by Phase 2 gateway).
+for i in $(seq 1 30); do
+  if docker exec "$NAME" wget -q -O /dev/null http://localhost:8090/api/health 2>/dev/null; then break; fi
+  sleep 2
+done
+ADMIN_PASS="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
+docker exec "$NAME" pocketbase superuser upsert "$ADMIN_EMAIL" "$ADMIN_PASS" --dir=/pb/data >/dev/null
+printf '%s' "$ADMIN_EMAIL:$ADMIN_PASS" > "$IDB_ROOT/keys/$SLUG.admin"
+chmod 600 "$IDB_ROOT/keys/$SLUG.admin"
+
+# 4. Caddy route. Phase 2's gateway will sit between Caddy and PocketBase;
+#    until then traffic proxies straight through (box is private until launch).
+cat > "$IDB_ROOT/caddy/sites/$SLUG.caddy" <<EOF
+$HOST {
+	reverse_proxy $NAME:8090
+}
+EOF
+docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload >/dev/null
+
+echo "--- provisioned ---"
+echo "url:      https://$HOST"
+echo "key file: $KEY_FILE (0600)"
+echo ""
+echo "snippet:"
+echo "  const db = new InvisibleDB({"
+echo "    baseUrl: 'https://$HOST',"
+echo "    apiKey: process.env.INVISIBLEDB_KEY, // $KEY_FILE"
+echo "  });"

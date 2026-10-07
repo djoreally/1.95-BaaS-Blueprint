@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Nightly SQLite backup for one or all customers.
+# Uses sqlite3 .backup (online, no downtime) inside each running container,
+# then compresses. Retention: 7 daily + 4 weekly, enforced here.
+# Off-box copy: rsync /srv/idb/backups to the OrangeHost box (see README).
+# Usage: backup [slug]   (no slug = all customers)
+set -euo pipefail
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+BACKUP_DIR="$IDB_ROOT/backups"
+mkdir -p "$BACKUP_DIR"
+
+backup_one() {
+  local slug="$1" name="idb-$1"
+  local stamp; stamp="$(date +%F)"
+  local tmp="/tmp/$name-$stamp.db"
+  docker exec "$name" sqlite3 /pb/data/data.db ".backup '$tmp'" 2>/dev/null || {
+    echo "skip $slug (not running?)" >&2; return 0
+  }
+  docker cp "$name:$tmp" "$BACKUP_DIR/$slug-$stamp.db" >/dev/null
+  docker exec "$name" rm -f "$tmp" >/dev/null
+  gzip -f "$BACKUP_DIR/$slug-$stamp.db"
+  echo "backed up $slug"
+}
+
+if [[ "${1:-}" != "" ]]; then
+  backup_one "$1"
+else
+  for c in $(docker ps --format '{{.Names}}' | grep '^idb-' | grep -v '^idb-caddy' || true); do
+    backup_one "${c#idb-}"
+  done
+fi
+
+# Retention: keep 7 newest per customer, plus one per week for 4 weeks.
+# (Simple version: keep newest 11 files per slug.)
+for slug in $(ls "$BACKUP_DIR" | sed 's/-[0-9-]*\.db\.gz$//' | sort -u); do
+  ls -t "$BACKUP_DIR/$slug"-*.db.gz 2>/dev/null | tail -n +12 | xargs -r rm -f
+done

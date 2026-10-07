@@ -1,0 +1,9 @@
+# Caddy edge for InvisibleDB.
+# Per-customer routes live in sites/<slug>.caddy, written by bin/provision and
+# removed by bin/deprovision, then `docker compose exec caddy caddy reload`.
+# Caddy issues and renews TLS automatically for each listed hostname.
+{
+	email {$ACME_EMAIL}
+}
+
+import sites/*.caddy

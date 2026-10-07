@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Remove one InvisibleDB customer. Keeps a final backup; drops the container,
+# volume, Caddy route, and API key.
+# Usage: deprovision <slug> [--drop-data]
+set -euo pipefail
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+SLUG="${1:?usage: deprovision <slug> [--drop-data>}"
+DROP="${2:-}"
+
+NAME="idb-$SLUG"
+VOL="$NAME-data"
+
+# Final backup before anything is destroyed.
+"$IDB_ROOT/bin/backup" "$SLUG" || true
+
+docker rm -f "$NAME" >/dev/null 2>&1 || true
+rm -f "$IDB_ROOT/caddy/sites/$SLUG.caddy"
+rm -f "$IDB_ROOT/keys/$SLUG.key" "$IDB_ROOT/keys/$SLUG.admin"
+docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload >/dev/null 2>&1 || true
+
+if [[ "$DROP" == "--drop-data" ]]; then
+  docker volume rm "$VOL" >/dev/null 2>&1 || true
+  echo "dropped: $NAME (data destroyed)"
+else
+  echo "deprovisioned: $NAME (volume $VOL retained — pass --drop-data to destroy)"
+fi
