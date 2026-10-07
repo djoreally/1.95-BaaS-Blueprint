@@ -65,7 +65,8 @@ One snippet, API key in an env var, back to building.
 | VPS poller API | `app/api/vps/requests` | `[built]` tsc clean | needs VPS_API_SECRET both ends |
 | MCP server | `packages/mcp-server` | `[built]` tests green | single-key client (post-revert) |
 | `idb` CLI | `packages/cli` | `[built]` | |
-| JS SDK / Dart SDK | docs snippets | `[stubbed]` snippets exist, live-verify pending | |
+| JS SDK (`packages/sdk-js`) | npm | `[built]` CRUD/files/vectors/SSE, 6/6 tests, tsc clean | live-verify vs box pending |
+| Dart SDK (`packages/sdk-dart`) | pub.dev | `[built]` same surface (no realtime) | needs `dart test` on a Dart machine |
 | sqlite-vec | `Dockerfile.vec` | `[stubbed]` written, needs box build | |
 | Legal (ToS/privacy/DPA/BYOH) | `deploy/legal` | `[stubbed]` drafts, attorney review needed | |
 | Status page | — | `[missing]` | Phase 4 |
