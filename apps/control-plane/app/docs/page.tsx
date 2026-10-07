@@ -125,17 +125,12 @@ import 'package:invisibledb/invisibledb.dart';
 
 final db = InvisibleDB(
   baseUrl: 'https://your-app.invisibledb.app',
-  apiKey: 'YOUR_API_KEY',
+  apiKey: 'YOUR_API_KEY', // server-side only — keep it in an env var
 );
 
-// Auth
-await db.auth.signIn('you@example.com', 'password');
-
-// Realtime collection
+// Your API key IS the auth — no login step needed
 final messages = await db.collection('messages').getList();
-db.collection('messages').subscribe((e) {
-  print('live update: \${e.action}');
-});`}</pre>
+await db.collection('messages').create({'text': 'hello from Dart'});`}</pre>
             </div>
 
             <div className="m-doc-step" id="rest">
