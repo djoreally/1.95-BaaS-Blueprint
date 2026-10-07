@@ -1,0 +1,45 @@
+# PocketBase + sqlite-vec custom build (Phase 3).
+# The stock Dockerfile uses the official binary (fast, no toolchain).
+# THIS variant compiles PocketBase from source with the sqlite-vec extension
+# registered, so `vec0` virtual tables work natively in every customer DB:
+#
+#   CREATE VIRTUAL TABLE vec_docs USING vec0(embedding float[1536]);
+#
+# Build on the VPS (needs ~2 GB RAM free during compile):
+#   docker build -f Dockerfile.vec -t idb-pocketbase:vec ./pocketbase
+# Then point bin/provision at the :vec tag (IDB_PB_IMAGE env, defaults to latest).
+#
+# NOTE: not yet build-verified — verify on the InterServer box before switching
+# the provision default. CGO is required (mattn/go-sqlite3 + vec bindings).
+
+ARG PB_VERSION=0.36.5
+ARG VEC_VERSION=v0.1.6
+
+FROM golang:1.24-alpine AS build
+ARG PB_VERSION
+ARG VEC_VERSION
+RUN apk add --no-cache gcc musl-dev
+WORKDIR /src
+
+# PocketBase source at the pinned version
+RUN wget -q "https://github.com/pocketbase/pocketbase/archive/refs/tags/v${PB_VERSION}.tar.gz" \
+      -O pb.tar.gz && tar xzf pb.tar.gz --strip-components=1 && rm pb.tar.gz
+
+# main.go that registers sqlite-vec before serving
+COPY --chmod=644 main_vec.go ./main_vec.go
+
+RUN go mod edit -replace github.com/asg017/sqlite-vec-go-bindings=github.com/asg017/sqlite-vec-go-bindings@${VEC_VERSION} && \
+    go get github.com/asg017/sqlite-vec-go-bindings@${VEC_VERSION} && \
+    CGO_ENABLED=1 go build -o /pb/pocketbase -tags cgo ./main_vec.go
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates sqlite && \
+    adduser -D -h /pb pocketbase
+COPY --from=build /pb/pocketbase /usr/local/bin/pocketbase
+USER pocketbase
+WORKDIR /pb
+VOLUME ["/pb/data"]
+EXPOSE 8090
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -q -O /dev/null http://localhost:8090/api/health || exit 1
+ENTRYPOINT ["pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb/data"]
