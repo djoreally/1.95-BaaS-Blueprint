@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { currentUser } from '../../../lib/auth';
+import { hasHostedEntitlement } from '../../../lib/billing';
 import { listUserJobs, startUserProvisioning } from '../../../lib/user-projects';
 import {
   getByohConnection,
@@ -27,6 +28,14 @@ export async function POST(req: Request) {
   const body = (await req.json()) as { name?: string; domain?: string };
   const jar = await cookies();
   const hostingMode = normalizeHostingMode(jar.get('baas_hosting_mode')?.value);
+
+  if (hostingMode === 'HOSTED' && !(await hasHostedEntitlement(user.id))) {
+    return NextResponse.json(
+      { error: 'An active InvisibleDB hosted subscription is required before provisioning.' },
+      { status: 402 },
+    );
+  }
+
   const conn = hostingMode === 'HOSTED'
     ? await getPlatformConnection()
     : await getByohConnection(user.id);
