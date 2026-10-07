@@ -14,8 +14,8 @@ import { normalizeHostingMode } from '../../lib/hosting';
 /**
  * Signup — account auth is still MVP-stubbed, but hosting intent is real.
  *
- * HOSTED customers skip cPanel entirely and go straight to project creation.
- * BYOH customers keep the existing connect-hosting flow.
+ * Public signup defaults to HOSTED: paying customers never see cPanel.
+ * BYOH remains available explicitly with /signup?mode=byoh.
  */
 export default async function Signup({
   searchParams,
@@ -23,7 +23,7 @@ export default async function Signup({
   searchParams: Promise<{ mode?: string }>;
 }) {
   const params = await searchParams;
-  const requestedMode = normalizeHostingMode(params.mode);
+  const requestedMode = params.mode ? normalizeHostingMode(params.mode) : 'HOSTED';
 
   async function signup(formData: FormData) {
     'use server';
