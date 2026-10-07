@@ -78,13 +78,9 @@ export default function DocsPage() {
               <div className="step-label">Step 2 — API keys</div>
               <h3>Grab your keys</h3>
               <p>
-                Every project gets two keys. The <b>publishable key</b> (
-                <span className="code-inline">pk_live_…</span>) goes in your
-                frontend and mobile code — it can only touch data belonging to
-                the signed-in user. The <b>secret key</b> (
-                <span className="code-inline">sk_live_…</span>) lives on your
-                server in an environment variable and unlocks admin operations.
-                Rotate either any time from the dashboard.
+                Open your project dashboard and copy the API keys. Each project gets its own
+                isolated keys — rotate them any time from the dashboard. Keys are scoped to
+                your data and nothing else.
               </p>
             </div>
 
@@ -100,7 +96,7 @@ import { InvisibleDB } from 'invisibledb';
 
 const db = new InvisibleDB({
   baseUrl: 'https://your-app.invisibledb.app',
-  publishableKey: 'pk_live_...', // safe in client bundles — user-scoped only
+  apiKey: 'YOUR_API_KEY',
 });
 
 // Auth + realtime
@@ -109,11 +105,6 @@ const messages = await db.collection('messages').getList();
 db.collection('messages').subscribe((e) => {
   console.log('live update:', e.action);
 });`}</pre>
-              <p className="security-note">
-                The publishable key is safe in frontend and mobile code. It can only touch
-                data belonging to the signed-in user — admin operations need the secret key
-                on your server.
-              </p>
             </div>
 
             <div className="m-doc-step" id="mobile">
@@ -134,7 +125,7 @@ import 'package:invisibledb/invisibledb.dart';
 
 final db = InvisibleDB(
   baseUrl: 'https://your-app.invisibledb.app',
-  publishableKey: 'pk_live_...', // safe in client bundles — user-scoped only
+  apiKey: 'YOUR_API_KEY',
 );
 
 // Auth
@@ -156,11 +147,11 @@ db.collection('messages').subscribe((e) {
               </p>
               <pre className="code">{`# List records
 curl https://your-app.invisibledb.app/api/collections/messages/records \\
-  -H "Authorization: Bearer pk_live_..."
+  -H "Authorization: Bearer YOUR_API_KEY"
 
 # Create a record
 curl -X POST https://your-app.invisibledb.app/api/collections/messages/records \\
-  -H "Authorization: Bearer pk_live_..." \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"text": "hello from curl"}'`}</pre>
             </div>
@@ -175,7 +166,7 @@ curl -X POST https://your-app.invisibledb.app/api/collections/messages/records \
               </p>
               <pre className="code">{`# Semantic search over your collection
 curl -X POST https://your-app.invisibledb.app/api/vector/query \\
-  -H "Authorization: Bearer pk_live_..." \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "collection": "docs",

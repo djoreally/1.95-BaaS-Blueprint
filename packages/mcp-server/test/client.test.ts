@@ -21,8 +21,7 @@ describe('RestInvisibleDBClient with fake transport', () => {
       instanceId: 'inst_1',
       baseUrl: 'https://demo.invisibledb.io',
       adminUrl: 'https://demo.invisibledb.io/_/',
-      publishableKey: 'pk_test_fake',
-      secretKey: 'sk_test_fake',
+      apiKey: 'fake-key',
       dartSnippet: 'final pb = PocketBase("https://demo.invisibledb.io");',
       restSnippet: 'curl https://demo.invisibledb.io/api/health',
     },
@@ -55,7 +54,7 @@ describe('RestInvisibleDBClient with fake transport', () => {
 
   it('keys returns the stored key bundle', async () => {
     const k = await make().keys('inst_1');
-    assert.equal(k.publishableKey, 'pk_test_fake');
+    assert.equal(k.apiKey, 'fake-key');
     assert.ok(k.dartSnippet.includes('PocketBase'));
   });
 

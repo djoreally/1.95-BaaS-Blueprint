@@ -70,15 +70,12 @@ async function cmdKeys(client: InvisibleDBClient, instance: string): Promise<voi
   console.log(`Instance: ${k.instanceId}`);
   console.log(`Base URL: ${k.baseUrl}`);
   console.log(`Admin UI: ${k.adminUrl}`);
-  console.log(`Publishable key: ${k.publishableKey}  (safe in client code)`);
-  if (k.secretKey) {
-    console.log(`Secret key:      ${k.secretKey}  (server only — shown once, store in an env var)`);
-  }
+  console.log(`API key:  ${k.apiKey}`);
   console.log('\nDart:');
   console.log(k.dartSnippet);
   console.log('\ncurl:');
   console.log(k.restSnippet);
-  console.error('\nwarning: the secret key is server-only — do not log, commit, or share it.');
+  console.error('\nwarning: the API key is a secret — do not log or share it.');
 }
 
 async function main(): Promise<void> {

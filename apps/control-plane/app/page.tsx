@@ -63,7 +63,7 @@ function CodeWindow() {
 
 const db = new InvisibleDB({
   baseUrl: "https://demo.invisibledb.app",
-  publishableKey: process.env.INVISIBLEDB_PUBLISHABLE_KEY, // pk_live_… — safe in client code
+  apiKey: process.env.INVISIBLEDB_KEY,
 });
 
 // auth, realtime, storage — one client

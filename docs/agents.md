@@ -211,7 +211,7 @@ and checks a gate — the full loop:
 
 3. KEYS
    → idb_keys { instance: "inst_7" }
-   ← { baseUrl, publishableKey: "pk_live_…", secretKey: "<shown once>", dartSnippet, … }
+   ← { baseUrl, apiKey: "<secret>", dartSnippet, … }
 
 4. WRITE DATA (REST, PocketBase)
    → POST /api/collections/notes/records { title: "First note" }

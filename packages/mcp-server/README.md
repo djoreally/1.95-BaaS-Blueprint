@@ -75,7 +75,7 @@ interface over the control plane REST API. The HTTP layer is a swappable
 `HttpTransport`:
 
 - `stubTransport()` — fails loudly until configured (default)
-- `fetchTransport(baseUrl, key)` — real fetch transport, ready when the API lands
+- `fetchTransport(baseUrl, apiKey)` — real fetch transport, ready when the API lands
 - `fakeTransport(seed?)` — deterministic in-memory fake for tests
 
 `src/tools.ts` holds pure handler functions (unit-tested); `src/index.ts`

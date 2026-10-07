@@ -596,25 +596,6 @@ pre.code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.code-inline {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85em;
-  background: #131316;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.1rem 0.4rem;
-  color: #fbbf24;
-}
-
-.security-note {
-  margin-top: 0.9rem;
-  font-size: 0.88rem;
-  color: #a1a1aa;
-  border-left: 2px solid #f59e0b;
-  padding-left: 0.9rem;
-  line-height: 1.6;
-}
-
 .kv { display: grid; grid-template-columns: 180px 1fr; gap: 0.5rem 1rem; font-size: 0.95rem; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; font-weight: 500; word-break: break-all; }

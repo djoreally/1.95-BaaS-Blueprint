@@ -46,10 +46,8 @@ export interface InstanceKeys {
   baseUrl: string;
   /** Admin UI URL. */
   adminUrl: string;
-  /** Publishable key (pk_live_…) — safe in client bundles, user-scoped only. */
-  publishableKey: string;
-  /** Secret key (sk_live_…) — server-side only. Shown once at creation. */
-  secretKey?: string;
+  /** Scoped API key for this instance. Treat as a secret. */
+  apiKey: string;
   /** Ready-to-paste Dart snippet using the PocketBase SDK. */
   dartSnippet: string;
   /** Equivalent curl example. */
@@ -139,7 +137,7 @@ export class NoTransportError extends Error {
   constructor() {
     super(
       'InvisibleDBClient: no HTTP transport configured. ' +
-        'Pass an HttpTransport (e.g. fetchTransport(baseUrl, key)) — ' +
+        'Pass an HttpTransport (e.g. fetchTransport(baseUrl, apiKey)) — ' +
         'see packages/mcp-server/README.md.',
     );
     this.name = 'NoTransportError';
@@ -159,7 +157,7 @@ export function stubTransport(): HttpTransport {
  * Real fetch-based transport. Ready to use the moment the control plane
  * REST API lands — baseUrl like "https://baas.innovarel.dev".
  */
-export function fetchTransport(baseUrl: string, key: string): HttpTransport {
+export function fetchTransport(baseUrl: string, apiKey: string): HttpTransport {
   const root = baseUrl.replace(/\/+$/, '');
   return {
     async request<T>(
@@ -171,7 +169,7 @@ export function fetchTransport(baseUrl: string, key: string): HttpTransport {
         method,
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${key}`,
+          authorization: `Bearer ${apiKey}`,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
@@ -308,9 +306,9 @@ export class RestInvisibleDBClient implements InvisibleDBClient {
  */
 export function clientFromEnv(): InvisibleDBClient {
   const baseUrl = process.env['INVISIBLED_API_URL'];
-  const key = process.env['INVISIBLED_API_KEY'];
-  if (baseUrl && key) {
-    return new RestInvisibleDBClient(fetchTransport(baseUrl, key));
+  const apiKey = process.env['INVISIBLED_API_KEY'];
+  if (baseUrl && apiKey) {
+    return new RestInvisibleDBClient(fetchTransport(baseUrl, apiKey));
   }
   return new RestInvisibleDBClient(stubTransport());
 }
