@@ -27,9 +27,10 @@ export default async function ProjectsPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>Projects</h1>
         <span className="badge up">{hostingMode === 'HOSTED' ? 'Managed hosting' : conn.host}</span>
+        {hostingMode === 'HOSTED' && <a href="/api/billing/portal">Manage billing</a>}
         <a className="btn" href="/projects/new" style={{ marginLeft: 'auto' }}>+ New project</a>
       </div>
       {projects.length === 0 ? (
