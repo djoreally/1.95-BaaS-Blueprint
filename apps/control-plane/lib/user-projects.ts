@@ -1,5 +1,11 @@
 import { prisma } from './db';
-import { getJob, startProvisioning, teardownProject, type ProjectJob } from './projects';
+import { getConnectionById, type HostingConnection } from './connection';
+import {
+  getJob,
+  startProvisioningFor,
+  teardownProjectWithConnection,
+  type ProjectJob,
+} from './projects';
 
 export async function listUserJobs(userId: string): Promise<ProjectJob[]> {
   const rows = await prisma.project.findMany({
@@ -21,18 +27,21 @@ export async function startUserProvisioning(
   userId: string,
   name: string,
   domain: string,
-  connectionId: string | null,
+  connection: HostingConnection,
 ): Promise<ProjectJob> {
-  const job = await startProvisioning(name, domain);
-  await prisma.project.update({
-    where: { id: job.id },
-    data: { userId, connectionId },
-  });
-  return job;
+  return startProvisioningFor(userId, connection, name, domain);
 }
 
 export async function teardownUserProject(userId: string, id: string) {
-  const owned = await prisma.project.findFirst({ where: { id, userId }, select: { id: true } });
+  const owned = await prisma.project.findFirst({
+    where: { id, userId },
+    select: { id: true, connectionId: true },
+  });
   if (!owned) throw new Error('unknown project');
-  return teardownProject(id);
+  if (!owned.connectionId) throw new Error('project has no hosting connection');
+
+  const connection = await getConnectionById(owned.connectionId);
+  if (!connection) throw new Error('project hosting connection is unavailable');
+
+  return teardownProjectWithConnection(id, connection);
 }
