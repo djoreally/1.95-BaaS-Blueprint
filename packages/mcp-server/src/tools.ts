@@ -78,7 +78,7 @@ export async function handleList(client: InvisibleDBClient) {
 
 export async function handleKeys(client: InvisibleDBClient, args: KeysArgs) {
   const keys = await client.keys(args.instance);
-  // The apiKey is returned because the caller is the authenticated operator.
+  // The secretKey is returned because the caller is the authenticated operator.
   // Never log it, never paste it into tickets or prompts beyond this session.
   return text(keys);
 }
@@ -134,7 +134,7 @@ export const tools: ToolDef[] = [
   {
     name: 'idb_keys',
     description:
-      'Get API keys and SDK snippets (Dart + curl) for an instance. The apiKey is a secret — do not log or share it.',
+      'Get API keys and SDK snippets (Dart + curl) for an instance. The secretKey is server-only — do not log or share it.',
     schema: keysSchema,
     handler: handleKeys as ToolDef['handler'],
   },

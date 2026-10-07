@@ -63,7 +63,7 @@ function CodeWindow() {
 
 const db = new InvisibleDB({
   baseUrl: "https://demo.invisibledb.app",
-  apiKey: process.env.INVISIBLEDB_KEY,
+  publishableKey: process.env.INVISIBLEDB_PUBLISHABLE_KEY, // pk_live_… — safe in client code
 });
 
 // auth, realtime, storage — one client
@@ -147,9 +147,10 @@ export default function HomePage() {
           <span className="hl">None of the ops.</span>
         </h1>
         <p className="hp-sub">
-          InvisibleDB is the hosted backend for web and mobile apps — auth, realtime
-          database, file storage, and vector search through one SDK. $6.99 a month flat.
-          Your data stays yours.
+          You give us an email address, we provision an isolated, secure SQLite database
+          in the cloud for you instantly. We handle the auth, we handle the files, and we
+          handle the vector embeddings natively. Paste one snippet, keep your API key in
+          an environment variable, and go back to building your actual app features.
         </p>
         <div className="hp-ctas">
           <a className="hp-btn" href="/signup">Get started {Icon.arrow}</a>
