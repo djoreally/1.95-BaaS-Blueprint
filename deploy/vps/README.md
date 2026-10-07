@@ -40,7 +40,7 @@ mkdir -p /srv/idb && rsync -a deploy/vps/ /srv/idb/
 cd /srv/idb
 cp .env.example .env   # fill in BASE_DOMAIN + ACME_EMAIL
 chmod +x bin/*
-docker compose up -d          # Caddy comes up; sites/ is empty, that's fine
+docker compose up -d --build   # Caddy + gateway; sites/ is empty, that's fine
 docker build -t idb-pocketbase:latest ./pocketbase
 ```
 
@@ -68,9 +68,9 @@ DNS: wildcard `*.BASE_DOMAIN` → box IP (or per-customer A records).
 - Disk: each customer is capped at 256 MB RAM; watch `/var/lib/docker` volume growth.
 - Uptime: point any uptime checker at `https://<slug>.BASE_DOMAIN/api/health`.
 
-## Limits (by design, Phase 1)
+## Limits (by design, Phase 1–2)
 
-- No auth gateway yet (Phase 2): Caddy proxies straight to PocketBase. The box
-  stays private / unlisted until the gateway lands — do not send customers here.
+- The gateway runs every request as the customer's PocketBase superuser behind
+  their API key (single-key model). Per-user scoping is a later tier, not v1.
 - No sqlite-vec yet (Phase 3): the Dockerfile is structured for a custom build swap.
 - Backups are local + rsync; object storage (B2) is the Phase 4 upgrade.

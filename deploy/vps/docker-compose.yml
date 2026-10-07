@@ -32,6 +32,22 @@ services:
     networks:
       - idb-net
 
+  # Auth gateway: validates `Authorization: Bearer <apiKey>` against
+  # /srv/idb/keys, swaps in the customer's PocketBase superuser token,
+  # and proxies to the right idb-<slug> container. Zero dependencies.
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - /srv/idb/keys:/keys:ro
+    environment:
+      PORT: "8080"
+      KEYS_DIR: /keys
+    networks:
+      - idb-net
+
 networks:
   idb-net:
     driver: bridge

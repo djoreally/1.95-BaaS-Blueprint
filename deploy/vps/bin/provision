@@ -53,11 +53,11 @@ docker exec "$NAME" pocketbase superuser upsert "$ADMIN_EMAIL" "$ADMIN_PASS" --d
 printf '%s' "$ADMIN_EMAIL:$ADMIN_PASS" > "$IDB_ROOT/keys/$SLUG.admin"
 chmod 600 "$IDB_ROOT/keys/$SLUG.admin"
 
-# 4. Caddy route. Phase 2's gateway will sit between Caddy and PocketBase;
-#    until then traffic proxies straight through (box is private until launch).
+# 4. Caddy route -> gateway (validates the Bearer API key, then proxies to
+#    this customer's PocketBase container by Host header).
 cat > "$IDB_ROOT/caddy/sites/$SLUG.caddy" <<EOF
 $HOST {
-	reverse_proxy $NAME:8090
+	reverse_proxy gateway:8080
 }
 EOF
 docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload >/dev/null
