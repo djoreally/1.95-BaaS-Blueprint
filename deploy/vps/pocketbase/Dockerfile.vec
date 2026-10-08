@@ -5,10 +5,12 @@
 ARG PB_VERSION=0.36.5
 ARG VEC_VERSION=v0.1.6
 
-FROM golang:1.24-alpine AS build
+FROM golang:1.24-bookworm AS build
 ARG PB_VERSION
 ARG VEC_VERSION
-RUN apk add --no-cache gcc musl-dev sqlite-dev wget
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential libsqlite3-dev wget ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 
 # Keep PocketBase at a pinned version so the custom runtime and API contract are reproducible.
@@ -23,10 +25,13 @@ RUN go get github.com/asg017/sqlite-vec-go-bindings@${VEC_VERSION} && \
     go get github.com/mattn/go-sqlite3 && \
     CGO_ENABLED=1 go build -tags no_default_driver -o /pb/pocketbase ./cmd/invisibledb
 
-FROM alpine:3.21
-RUN apk add --no-cache ca-certificates sqlite wget && \
-    adduser -D -h /pb pocketbase && \
-    mkdir -p /pb/data && chown pocketbase:pocketbase /pb/data
+FROM debian:bookworm-slim
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libsqlite3-0 wget passwd && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system pocketbase && \
+    useradd --system --gid pocketbase --home /pb --create-home pocketbase && \
+    mkdir -p /pb/data && chown -R pocketbase:pocketbase /pb
 COPY --from=build /pb/pocketbase /usr/local/bin/pocketbase
 USER pocketbase
 WORKDIR /pb
