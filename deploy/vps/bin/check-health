@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Health check for InvisibleDB VPS — run via cron every 5 minutes.
+# Checks: disk space, Docker daemon, Caddy, gateway, customer containers.
+# Alerts: writes to /srv/idb/health.log; exits 1 if anything is critical.
+set -uo pipefail
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+LOG="$IDB_ROOT/health.log"
+CRITICAL=0
+
+log() { echo "$(date -Iseconds) $*" >> "$LOG"; }
+
+# Disk space — alert at 70%, critical at 85%
+DISK_PCT=$(df / | tail -1 | awk '{print $5}' | tr -d '%')
+if [ "$DISK_PCT" -ge 85 ]; then
+  log "CRITICAL: disk at ${DISK_PCT}%"
+  CRITICAL=1
+elif [ "$DISK_PCT" -ge 70 ]; then
+  log "WARNING: disk at ${DISK_PCT}%"
+fi
+
+# Docker daemon
+if ! docker info >/dev/null 2>&1; then
+  log "CRITICAL: docker daemon not responding"
+  CRITICAL=1
+fi
+
+# Caddy
+if ! docker ps --format '{{.Names}}' | grep -q '^idb-caddy$'; then
+  log "CRITICAL: idb-caddy container not running"
+  CRITICAL=1
+fi
+
+# Gateway
+if ! curl -sf http://localhost:8080/health >/dev/null 2>&1; then
+  log "CRITICAL: auth gateway health check failed"
+  CRITICAL=1
+fi
+
+# Customer containers — log any that are down (not critical, customer-specific)
+for c in $(docker ps -a --format '{{.Names}}' | grep '^idb-' | grep -v '^idb-caddy' | grep -v '^idb-gateway' || true); do
+  if ! docker ps --format '{{.Names}}' | grep -q "^${c}$"; then
+    log "WARNING: customer container $c is not running"
+  fi
+done
+
+# Keep log from growing unbounded (last 1000 lines)
+tail -n 1000 "$LOG" > "$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+
+exit $CRITICAL
