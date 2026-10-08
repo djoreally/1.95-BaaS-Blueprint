@@ -13,8 +13,9 @@ RUN apk add --no-cache unzip wget && \
     chmod +x /pb/pocketbase
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates sqlite && \
-    adduser -D -h /pb pocketbase
+RUN apk add --no-cache ca-certificates sqlite wget && \
+    adduser -D -h /pb pocketbase && \
+    mkdir -p /pb/data && chown pocketbase:pocketbase /pb/data
 COPY --from=fetch /pb/pocketbase /usr/local/bin/pocketbase
 USER pocketbase
 WORKDIR /pb
