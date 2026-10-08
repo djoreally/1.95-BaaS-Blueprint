@@ -13,6 +13,14 @@ function runPrisma(args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+// Preview/local compile environments intentionally may not have a database.
+// `prisma generate` does not need DATABASE_URL; migration does. Production keeps
+// the exact same migration path whenever DATABASE_URL is configured.
+if (!process.env.DATABASE_URL) {
+  console.log('DATABASE_URL is not configured; skipping database migration for this build environment.');
+  process.exit(0);
+}
+
 const prisma = new PrismaClient();
 
 try {
