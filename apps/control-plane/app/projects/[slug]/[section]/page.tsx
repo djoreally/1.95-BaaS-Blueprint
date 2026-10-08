@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { notFound, redirect } from 'next/navigation';
 import DatabaseSectionClient from '../../../components/DatabaseSectionClient';
+import StorageManager from '../../../components/StorageManager';
 import { currentUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/db';
 
@@ -35,7 +36,9 @@ export default async function DatabaseSection({ params }: { params: Promise<{ sl
         <p style={{ color: '#7f7f7f', margin: '8px 0 0' }}>InvisibleDB Cloud database · {section}</p>
       </div>
 
-      <DatabaseSectionClient slug={slug} section={section} endpoint={endpoint} />
+      {section === 'storage'
+        ? <StorageManager slug={slug} />
+        : <DatabaseSectionClient slug={slug} section={section} endpoint={endpoint} />}
     </div>
   );
 }
