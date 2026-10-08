@@ -21,8 +21,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     return NextResponse.json({ error: 'instance not found' }, { status: 404 });
   }
 
-  const [state, commands] = await Promise.all([
+  const [state, credential, commands] = await Promise.all([
     prisma.instanceState.findUnique({ where: { userId_slug: { userId: user.id, slug } } }),
+    prisma.instanceCredential.findUnique({ where: { userId_slug: { userId: user.id, slug } } }),
     prisma.runtimeCommand.findMany({
       where: { userId: user.id, slug },
       orderBy: { createdAt: 'desc' },
@@ -51,8 +52,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     }
   }
 
+  if (!credential) {
+    const syncing = await prisma.runtimeCommand.findFirst({
+      where: { userId: user.id, slug, kind: 'sync_key', status: { in: ['pending', 'claimed'] } },
+    });
+    if (!syncing) {
+      await prisma.runtimeCommand.create({ data: { userId: user.id, slug, kind: 'sync_key' } });
+    }
+  }
+
   return NextResponse.json({
     state: state ? { snapshot: state.snapshot, observedAt: state.observedAt } : null,
+    managementReady: Boolean(credential),
     commands: commands.map(({ secretResultEncrypted, ...command }) => ({
       ...command,
       hasSecret: Boolean(secretResultEncrypted),
