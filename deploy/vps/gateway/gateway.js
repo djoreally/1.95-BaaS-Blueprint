@@ -1,17 +1,14 @@
 /**
  * InvisibleDB auth gateway — zero dependencies, runs on plain node:20-alpine.
  *
- * Sits between Caddy and per-customer PocketBase containers:
- *   client -> Caddy (<slug>.BASE_DOMAIN, TLS) -> gateway:8080 -> idb-<slug>:8090
+ * Two credential lanes:
+ *   - Instance server key (`idb_live_...`) => privileged management/server access.
+ *     The gateway swaps it for the tenant PocketBase superuser token.
+ *   - Normal PocketBase user token (or no token) => passed through unchanged.
+ *     PocketBase collection rules remain the authorization boundary for web/mobile.
  *
- * Auth model (single-key, post pk_/sk_ revert):
- *   1. Client sends `Authorization: Bearer <apiKey>` (the key from /srv/idb/keys/<slug>.key).
- *   2. Gateway timing-safe-compares it. Mismatch -> 401, no proxying.
- *   3. Gateway swaps in a cached PocketBase superuser token for that customer's
- *      container (credentials from /srv/idb/keys/<slug>.admin) and proxies.
- *   4. On PocketBase 401 the gateway re-authenticates once and retries.
- *
- * The customer's key never reaches PocketBase; PocketBase never sees the internet.
+ * This lets mobile/browser apps authenticate real end users without embedding the
+ * instance server key while preserving the one-key server SDK experience.
  */
 'use strict';
 
@@ -22,11 +19,9 @@ const crypto = require('crypto');
 
 const KEYS_DIR = process.env.KEYS_DIR || '/keys';
 const PORT = parseInt(process.env.PORT || '8080', 10);
-// PB_UPSTREAM: override for tests. Default: idb-<slug> (docker network DNS).
 const upstreamHost = (slug) => process.env.PB_UPSTREAM || `idb-${slug}`;
 
-// ---- key + credential caches (re-read on mtime change) ----
-const cache = new Map(); // slug -> { key, keyMtime, admin, adminMtime, pbToken }
+const cache = new Map();
 
 function readIfChanged(file, prevMtime) {
   try {
@@ -46,12 +41,17 @@ function entryFor(slug) {
   if (k.missing) { cache.delete(slug); return null; }
   if (k.value !== null) { e.key = k.value; e.keyMtime = k.mtime; }
   const a = readIfChanged(path.join(KEYS_DIR, `${slug}.admin`), e.adminMtime);
-  if (a.value !== null) { e.admin = a.value; e.adminMtime = a.mtime; } // "email:pass"
+  if (a.value !== null) { e.admin = a.value; e.adminMtime = a.mtime; }
   if (!e.key || !e.admin) return null;
   return e;
 }
 
-// ---- PocketBase superuser auth (cached per slug) ----
+function timingSafeMatch(value, expectedValue) {
+  const got = Buffer.from(value || '');
+  const expected = Buffer.from(expectedValue || '');
+  return got.length === expected.length && crypto.timingSafeEqual(got, expected);
+}
+
 function pbRequest(slug, method, reqPath, body, token) {
   return new Promise((resolve, reject) => {
     const data = body ? Buffer.from(JSON.stringify(body)) : null;
@@ -84,8 +84,22 @@ async function pbTokenFor(slug, entry) {
   return entry.pbToken;
 }
 
-// ---- proxy ----
-function proxy(req, res, slug, entry, pbToken, retried) {
+function proxyPublic(req, res, slug) {
+  const upstream = http.request({
+    host: upstreamHost(slug), port: 8090,
+    path: req.url, method: req.method,
+    headers: { ...req.headers, host: `${upstreamHost(slug)}:8090` },
+    timeout: 30000,
+  }, (upRes) => {
+    res.writeHead(upRes.statusCode, upRes.headers);
+    upRes.pipe(res);
+  });
+  upstream.on('error', () => { res.writeHead(502); res.end('bad gateway'); });
+  upstream.on('timeout', () => upstream.destroy());
+  req.pipe(upstream);
+}
+
+function proxyAdmin(req, res, slug, entry, pbToken, retried) {
   const upstream = http.request({
     host: upstreamHost(slug), port: 8090,
     path: req.url, method: req.method,
@@ -93,9 +107,8 @@ function proxy(req, res, slug, entry, pbToken, retried) {
     timeout: 30000,
   }, (upRes) => {
     if (upRes.statusCode === 401 && !retried) {
-      // Token expired mid-flight: drop cache, re-auth once, retry.
       entry.pbToken = null;
-      pbTokenFor(slug, entry).then((t) => proxy(req, res, slug, entry, t, true))
+      pbTokenFor(slug, entry).then((t) => proxyAdmin(req, res, slug, entry, t, true))
         .catch(() => { res.writeHead(502); res.end('upstream auth failed'); });
       upRes.resume();
       return;
@@ -108,6 +121,14 @@ function proxy(req, res, slug, entry, pbToken, retried) {
   req.pipe(upstream);
 }
 
+function blockedPublicPath(reqUrl) {
+  const pathname = String(reqUrl || '/').split('?')[0];
+  return pathname.startsWith('/_/') ||
+    pathname.startsWith('/api/collections/_superusers') ||
+    pathname.startsWith('/api/settings') ||
+    pathname.startsWith('/api/backups');
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.url === '/healthz') { res.writeHead(200); res.end('ok'); return; }
 
@@ -116,19 +137,44 @@ const server = http.createServer(async (req, res) => {
   const entry = entryFor(slug);
   if (!entry) { res.writeHead(404); res.end('unknown instance'); return; }
 
+  if (req.method === 'GET' && (req.url === '/' || req.url === '')) {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      service: 'InvisibleDB',
+      instance: slug,
+      status: 'ready',
+      api: '/api',
+      message: 'Connect with an InvisibleDB SDK or REST client.',
+    }));
+    return;
+  }
+
   const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const expected = Buffer.from(entry.key);
-  const got = Buffer.from(bearer);
-  if (got.length !== expected.length || !crypto.timingSafeEqual(got, expected)) {
+  const serverKey = timingSafeMatch(bearer, entry.key);
+
+  if (serverKey) {
+    try {
+      const token = await pbTokenFor(slug, entry);
+      proxyAdmin(req, res, slug, entry, token, false);
+    } catch {
+      res.writeHead(502); res.end('upstream unavailable');
+    }
+    return;
+  }
+
+  // A mistyped server key should fail as a server key rather than being treated
+  // as an end-user token. PocketBase JWT/user tokens do not use this prefix.
+  if (bearer.startsWith('idb_live_')) {
     res.writeHead(401); res.end('invalid api key'); return;
   }
 
-  try {
-    const token = await pbTokenFor(slug, entry);
-    proxy(req, res, slug, entry, token, false);
-  } catch {
-    res.writeHead(502); res.end('upstream unavailable');
+  if (blockedPublicPath(req.url)) {
+    res.writeHead(403); res.end('management endpoint requires instance server key'); return;
   }
+
+  // Normal browser/mobile lane: no token for public rules, or a PocketBase user
+  // token for authenticated collection rules. The gateway does not elevate it.
+  proxyPublic(req, res, slug);
 });
 
 server.listen(PORT, '0.0.0.0', () => console.log(`idb-gateway listening on :${PORT}`));
