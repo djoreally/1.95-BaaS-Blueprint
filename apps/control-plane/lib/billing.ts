@@ -59,7 +59,6 @@ export async function createHostedCheckout(user: { id: string; email: string; na
     'metadata[product]': 'invisibledb',
     'subscription_data[metadata][user_id]': user.id,
     'subscription_data[metadata][product]': 'invisibledb',
-    'subscription_data[billing_mode][type]': 'flexible',
     submit_type: 'subscribe',
     billing_address_collection: 'auto',
   };
