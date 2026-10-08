@@ -268,8 +268,8 @@ function slugForEmail(email: string): string {
     .slice(0, 40) || 'customer';
 }
 
-async function queueRequest(kind: 'provision' | 'deprovision', userId: string, email: string) {
-  const slug = slugForEmail(email);
+export async function queueRequest(kind: 'provision' | 'deprovision', userId: string, email: string, slugOverride?: string) {
+  const slug = slugOverride || slugForEmail(email);
   const existing = await prisma.provisionRequest.findFirst({
     where: { slug, kind, status: { in: ['pending', 'claimed'] } },
   });
