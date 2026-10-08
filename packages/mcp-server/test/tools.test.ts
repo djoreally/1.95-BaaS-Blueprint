@@ -18,10 +18,10 @@ function textOf(result: { content: Array<{ type: 'text'; text: string }> }): unk
 }
 
 describe('tool registry', () => {
-  it('exposes exactly the five documented tools', () => {
+  it('exposes exactly the six documented tools', () => {
     assert.deepEqual(
       tools.map((t) => t.name),
-      ['idb_provision', 'idb_list', 'idb_keys', 'idb_query', 'idb_gate_check'],
+      ['idb_provision', 'idb_list', 'idb_keys', 'idb_query', 'idb_gate_check', 'idb_status'],
     );
   });
 });

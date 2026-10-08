@@ -152,4 +152,20 @@ export const tools: ToolDef[] = [
     schema: gateCheckSchema,
     handler: handleGateCheck as ToolDef['handler'],
   },
+  {
+    name: 'idb_status',
+    description:
+      'Platform status: version, instance count, and control-plane reachability.',
+    schema: {},
+    handler: handleStatus as ToolDef['handler'],
+  },
 ];
+
+/**
+ * Adding a tool (the whole pattern):
+ *   1. Define a zod schema object + inferred Args type near the top.
+ *   2. Write `handleX(client, args)` — pure async, returns text(payload).
+ *      Never claim success beyond what the client returns.
+ *   3. Append one entry to `tools` above. index.ts registers it automatically.
+ * No other file changes needed.
+ */
