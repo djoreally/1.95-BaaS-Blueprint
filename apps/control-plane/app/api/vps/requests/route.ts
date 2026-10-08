@@ -12,10 +12,18 @@ function authorized(req: Request): boolean {
   return req.headers.get('authorization') === `Bearer ${secret}`;
 }
 
-/** GET — claim up to 5 pending requests (claimed so two pollers can't double-run). */
+/** GET — claim up to 5 pending requests (claimed so two pollers can't double-run).
+ *  Also recovers stale claims: a request stuck in 'claimed' for >10 min (poller died
+ *  mid-run) goes back to pending. */
 export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const claimed = await prisma.$transaction(async (tx) => {
+    // Recover stale claims first (poller died without reporting).
+    const staleCutoff = new Date(Date.now() - 10 * 60 * 1000);
+    await tx.provisionRequest.updateMany({
+      where: { status: 'claimed', updatedAt: { lt: staleCutoff } },
+      data: { status: 'pending' },
+    });
     const pending = await tx.provisionRequest.findMany({
       where: { status: 'pending' },
       orderBy: { createdAt: 'asc' },
