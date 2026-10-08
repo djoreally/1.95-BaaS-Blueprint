@@ -13,7 +13,7 @@ function authorized(req: Request): boolean {
   return req.headers.get('authorization') === `Bearer ${secret}`;
 }
 
-const SAFE_TO_RETRY = ['status', 'logs', 'usage'] as const;
+const SAFE_TO_RETRY = ['status', 'logs', 'usage', 'sync_key'] as const;
 
 export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -21,7 +21,6 @@ export async function GET(req: Request) {
   const claimed = await prisma.$transaction(async (tx) => {
     const staleCutoff = new Date(Date.now() - 10 * 60 * 1000);
 
-    // Read-only commands can safely be returned to the queue after a dead worker.
     await tx.runtimeCommand.updateMany({
       where: {
         status: 'claimed',
@@ -31,7 +30,6 @@ export async function GET(req: Request) {
       data: { status: 'pending', claimedAt: null },
     });
 
-    // Never silently repeat a mutating command. The user can explicitly retry it.
     await tx.runtimeCommand.updateMany({
       where: {
         status: 'claimed',
@@ -101,10 +99,23 @@ export async function POST(req: Request) {
     data: {
       status: body.ok ? 'done' : 'failed',
       result,
-      secretResultEncrypted: body.secret ? encryptSecret(body.secret) : undefined,
+      secretResultEncrypted:
+        body.secret && command.kind === 'rotate_key' ? encryptSecret(body.secret) : undefined,
       completedAt: new Date(),
     },
   });
+
+  if (body.ok && body.secret && (command.kind === 'rotate_key' || command.kind === 'sync_key')) {
+    await prisma.instanceCredential.upsert({
+      where: { userId_slug: { userId: command.userId, slug: command.slug } },
+      create: {
+        userId: command.userId,
+        slug: command.slug,
+        apiKeyEncrypted: encryptSecret(body.secret),
+      },
+      update: { apiKeyEncrypted: encryptSecret(body.secret) },
+    });
+  }
 
   if (body.ok && command.kind === 'status' && result) {
     await prisma.instanceState.upsert({
