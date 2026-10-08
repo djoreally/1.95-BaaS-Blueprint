@@ -1,4 +1,4 @@
--- Runtime command queue + latest per-instance state.
+-- Runtime command queue + latest per-instance state + encrypted management key.
 -- Additive only; no existing tables/columns are altered.
 
 CREATE TABLE IF NOT EXISTS "RuntimeCommand" (
@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS "InstanceState" (
   CONSTRAINT "InstanceState_pkey" PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "InstanceCredential" (
+  "id" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "slug" TEXT NOT NULL,
+  "apiKeyEncrypted" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "InstanceCredential_pkey" PRIMARY KEY ("id")
+);
+
 CREATE INDEX IF NOT EXISTS "RuntimeCommand_status_createdAt_idx"
   ON "RuntimeCommand"("status", "createdAt");
 CREATE INDEX IF NOT EXISTS "RuntimeCommand_userId_slug_createdAt_idx"
@@ -37,6 +47,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS "InstanceState_userId_slug_key"
   ON "InstanceState"("userId", "slug");
 CREATE INDEX IF NOT EXISTS "InstanceState_slug_idx"
   ON "InstanceState"("slug");
+CREATE UNIQUE INDEX IF NOT EXISTS "InstanceCredential_userId_slug_key"
+  ON "InstanceCredential"("userId", "slug");
+CREATE INDEX IF NOT EXISTS "InstanceCredential_slug_idx"
+  ON "InstanceCredential"("slug");
 
 DO $$ BEGIN
   ALTER TABLE "RuntimeCommand"
@@ -48,6 +62,13 @@ END $$;
 DO $$ BEGIN
   ALTER TABLE "InstanceState"
     ADD CONSTRAINT "InstanceState_userId_fkey"
+    FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "InstanceCredential"
+    ADD CONSTRAINT "InstanceCredential_userId_fkey"
     FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
