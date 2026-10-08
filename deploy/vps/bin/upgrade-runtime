@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Upgrade the InvisibleDB runtime on an already-provisioned VPS.
+# Assumes the updated deploy/vps directory has already been synced to /srv/idb.
+# Data volumes, keys, Caddy data, backups and .env are never deleted.
+set -euo pipefail
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+cd "$IDB_ROOT"
+source "$IDB_ROOT/.env"
+
+NEW_IMAGE="idb-pocketbase:vec"
+OLD_IMAGE="idb-pocketbase:latest"
+
+log() { printf '[upgrade] %s\n' "$*"; }
+
+log "building vec-capable PocketBase runtime"
+docker build -f pocketbase/Dockerfile.vec -t "$NEW_IMAGE" pocketbase
+
+log "rebuilding gateway with end-user/server-key split"
+docker compose build gateway
+docker compose up -d gateway caddy
+
+upgrade_one() {
+  local name="$1" slug="${1#idb-}" volume="${1}-data"
+  log "creating safety backup for $slug"
+  "$IDB_ROOT/bin/backup" "$slug"
+
+  log "upgrading $slug to $NEW_IMAGE"
+  docker stop "$name" >/dev/null
+  docker rm "$name" >/dev/null
+
+  if ! docker run -d --name "$name" \
+      --restart unless-stopped \
+      --network idb_idb-net \
+      --memory 256m --memory-swap 256m \
+      --pids-limit 128 \
+      -v "$volume:/pb/data" \
+      "$NEW_IMAGE" \
+      serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null; then
+    log "failed to start new image for $slug; rolling back"
+    docker rm -f "$name" >/dev/null 2>&1 || true
+    docker run -d --name "$name" --restart unless-stopped --network idb_idb-net \
+      --memory 256m --memory-swap 256m --pids-limit 128 -v "$volume:/pb/data" \
+      "$OLD_IMAGE" serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null
+    return 1
+  fi
+
+  local ok=0
+  for _ in $(seq 1 45); do
+    if docker exec "$name" wget -q -O /dev/null http://localhost:8090/api/health 2>/dev/null; then ok=1; break; fi
+    sleep 2
+  done
+
+  if [[ "$ok" != "1" ]]; then
+    log "health check failed for $slug; rolling back without touching its volume"
+    docker rm -f "$name" >/dev/null 2>&1 || true
+    docker run -d --name "$name" --restart unless-stopped --network idb_idb-net \
+      --memory 256m --memory-swap 256m --pids-limit 128 -v "$volume:/pb/data" \
+      "$OLD_IMAGE" serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null
+    return 1
+  fi
+
+  log "$slug healthy on vec runtime"
+}
+
+mapfile -t tenants < <(docker ps -a --format '{{.Names}}' | grep '^idb-' | grep -v -E '^idb-(caddy|gateway)$' || true)
+for tenant in "${tenants[@]}"; do
+  upgrade_one "$tenant"
+done
+
+chmod +x "$IDB_ROOT/bin/"*
+
+log "runtime upgrade complete"
+log "gateway: $(curl -fsS http://localhost:8080/healthz || echo FAILED)"
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep '^idb-' || true

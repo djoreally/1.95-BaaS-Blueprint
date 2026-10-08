@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Execute allow-listed InvisibleDB runtime operations for one tenant.
+
+Usage: runtime-command <kind> <slug> [payload-json]
+Prints one JSON object to stdout. Secrets are returned only in the dedicated
+`secret` field so the poller can route them into encrypted control-plane storage.
+"""
+from __future__ import annotations
+
+import gzip
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(os.environ.get("IDB_ROOT", "/srv/idb"))
+BACKUPS = ROOT / "backups"
+KEYS = ROOT / "keys"
+SLUG_RE = re.compile(r"^[a-z0-9-]+$")
+
+
+def run(args: list[str], *, check: bool = True, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, text=True, capture_output=True, check=check, timeout=timeout)
+
+
+def iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
+def require_container(slug: str) -> str:
+    name = f"idb-{slug}"
+    found = run(["docker", "inspect", name], check=False)
+    if found.returncode != 0:
+        raise RuntimeError(f"instance {slug} is not provisioned")
+    return name
+
+
+def backup_inventory(slug: str) -> list[dict]:
+    rows = []
+    for filename in sorted(BACKUPS.glob(f"{slug}-*.db.gz"), key=lambda p: p.stat().st_mtime, reverse=True)[:25]:
+        st = filename.stat()
+        rows.append({"filename": filename.name, "bytes": st.st_size, "createdAt": iso(st.st_mtime)})
+    return rows
+
+
+def status(slug: str) -> dict:
+    name = require_container(slug)
+    inspected = json.loads(run(["docker", "inspect", name]).stdout)[0]
+    state = inspected.get("State", {})
+    image = inspected.get("Config", {}).get("Image", "")
+
+    stats = run(["docker", "stats", "--no-stream", "--format", "{{json .}}", name], check=False)
+    stat_row = {}
+    if stats.returncode == 0 and stats.stdout.strip():
+        try:
+            stat_row = json.loads(stats.stdout.strip().splitlines()[-1])
+        except Exception:
+            stat_row = {}
+
+    volume_name = f"{name}-data"
+    volume_bytes = 0
+    volume = run(["docker", "volume", "inspect", volume_name], check=False)
+    if volume.returncode == 0:
+        try:
+            mountpoint = json.loads(volume.stdout)[0]["Mountpoint"]
+            du = run(["du", "-sb", mountpoint], check=False)
+            if du.returncode == 0:
+                volume_bytes = int(du.stdout.split()[0])
+        except Exception:
+            pass
+
+    db_bytes = 0
+    db_stat = run(["docker", "exec", name, "sh", "-lc", "stat -c %s /pb/data/data.db 2>/dev/null || wc -c < /pb/data/data.db"], check=False)
+    if db_stat.returncode == 0:
+        try:
+            db_bytes = int(db_stat.stdout.strip().splitlines()[-1])
+        except Exception:
+            pass
+
+    gateway = run(["curl", "-sf", "--max-time", "5", "http://localhost:8080/healthz"], check=False)
+    base_domain = os.environ.get("BASE_DOMAIN", "invisibledb.app")
+    host = f"{slug}.{base_domain}"
+    tls = run(["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "8", f"https://{host}/"], check=False)
+    tls_code = tls.stdout.strip() if tls.stdout else "000"
+
+    key_file = KEYS / f"{slug}.key"
+    backups = backup_inventory(slug)
+    health = state.get("Health", {}).get("Status") if isinstance(state.get("Health"), dict) else None
+
+    return {
+        "slug": slug,
+        "container": {
+            "status": state.get("Status", "unknown"),
+            "health": health,
+            "startedAt": state.get("StartedAt"),
+            "image": image,
+            "memory": stat_row.get("MemUsage"),
+            "memoryPercent": stat_row.get("MemPerc"),
+            "cpuPercent": stat_row.get("CPUPerc"),
+        },
+        "gatewayHealthy": gateway.returncode == 0,
+        "tls": {"healthy": tls_code != "000", "httpStatus": tls_code},
+        "usage": {
+            "volumeBytes": volume_bytes,
+            "databaseBytes": db_bytes,
+            "storageBytes": max(0, volume_bytes - db_bytes),
+        },
+        "features": {
+            "vector": "vec" in image.lower(),
+            "realtime": True,
+            "files": True,
+            "auth": True,
+        },
+        "apiKey": {
+            "present": key_file.exists(),
+            "updatedAt": iso(key_file.stat().st_mtime) if key_file.exists() else None,
+        },
+        "backups": backups,
+        "lastBackupAt": backups[0]["createdAt"] if backups else None,
+        "observedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def backup(slug: str) -> dict:
+    require_container(slug)
+    proc = run([str(ROOT / "bin" / "backup"), slug], timeout=180)
+    return {"message": proc.stdout.strip()[-500:], "state": status(slug)}
+
+
+def logs(slug: str, payload: dict) -> dict:
+    name = require_container(slug)
+    lines = int(payload.get("lines", 200))
+    lines = max(20, min(500, lines))
+    proc = run(["docker", "logs", "--tail", str(lines), name], check=False, timeout=30)
+    text = (proc.stdout + proc.stderr)[-100_000:]
+    return {"lines": lines, "text": text}
+
+
+def restart(slug: str) -> dict:
+    name = require_container(slug)
+    run(["docker", "restart", name], timeout=120)
+    return {"message": "instance restarted", "state": status(slug)}
+
+
+def restore(slug: str, payload: dict) -> dict:
+    name = require_container(slug)
+    filename = str(payload.get("backup", ""))
+    if not re.fullmatch(re.escape(slug) + r"-\d{4}-\d{2}-\d{2}(?:-\d{6})?\.db\.gz", filename):
+        raise RuntimeError("invalid backup filename")
+    source = BACKUPS / filename
+    if not source.is_file():
+        raise RuntimeError("backup not found")
+
+    run([str(ROOT / "bin" / "backup"), slug], timeout=180)
+
+    with tempfile.NamedTemporaryFile(prefix=f"idb-{slug}-restore-", suffix=".db", delete=False) as tmp:
+        temp_path = Path(tmp.name)
+        with gzip.open(source, "rb") as src:
+            shutil.copyfileobj(src, tmp)
+
+    try:
+        run(["docker", "cp", str(temp_path), f"{name}:/tmp/idb-restore.db"], timeout=60)
+        integrity = run(["docker", "exec", name, "sqlite3", "/tmp/idb-restore.db", "PRAGMA integrity_check;"], check=False)
+        run(["docker", "exec", name, "rm", "-f", "/tmp/idb-restore.db"], check=False)
+        if integrity.returncode != 0 or integrity.stdout.strip().lower() != "ok":
+            raise RuntimeError("backup failed SQLite integrity check")
+
+        run(["docker", "stop", name], timeout=60)
+        try:
+            run(["docker", "cp", str(temp_path), f"{name}:/pb/data/data.db"], timeout=60)
+        finally:
+            run(["docker", "start", name], timeout=60)
+
+        post = run(["docker", "exec", name, "sqlite3", "/pb/data/data.db", "PRAGMA integrity_check;"], check=False)
+        if post.returncode != 0 or post.stdout.strip().lower() != "ok":
+            raise RuntimeError("restored database failed post-restore integrity check")
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    return {"message": f"restored {filename}", "state": status(slug)}
+
+
+def read_key(slug: str) -> str:
+    require_container(slug)
+    key_file = KEYS / f"{slug}.key"
+    if not key_file.exists():
+        raise RuntimeError("instance key file missing")
+    return key_file.read_text(encoding="utf-8").strip()
+
+
+def rotate_key(slug: str) -> dict:
+    require_container(slug)
+    KEYS.mkdir(parents=True, exist_ok=True)
+    key_file = KEYS / f"{slug}.key"
+    if not key_file.exists():
+        raise RuntimeError("instance key file missing")
+    new_key = "idb_live_" + secrets.token_urlsafe(24).replace("=", "")
+    tmp = key_file.with_suffix(".key.new")
+    tmp.write_text(new_key, encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, key_file)
+    return {"message": "API key rotated", "secret": new_key, "state": status(slug)}
+
+
+def main() -> int:
+    if len(sys.argv) < 3:
+        print(json.dumps({"error": "usage: runtime-command <kind> <slug> [payload-json]"}))
+        return 2
+    kind, slug = sys.argv[1], sys.argv[2]
+    if not SLUG_RE.fullmatch(slug):
+        print(json.dumps({"error": "invalid slug"}))
+        return 2
+    payload = {}
+    if len(sys.argv) >= 4 and sys.argv[3]:
+        payload = json.loads(sys.argv[3])
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+
+    try:
+        if kind in ("status", "usage"):
+            out = status(slug)
+        elif kind == "logs":
+            out = logs(slug, payload)
+        elif kind == "backup":
+            out = backup(slug)
+        elif kind == "restart":
+            out = restart(slug)
+        elif kind == "restore":
+            out = restore(slug, payload)
+        elif kind == "rotate_key":
+            out = rotate_key(slug)
+        elif kind == "sync_key":
+            out = {"message": "management key synchronized", "secret": read_key(slug)}
+        else:
+            raise RuntimeError(f"unsupported command: {kind}")
+        print(json.dumps(out, separators=(",", ":")))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"error": str(exc)[:1000]}, separators=(",", ":")))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

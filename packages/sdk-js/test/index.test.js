@@ -18,12 +18,12 @@ function json(body, status = 200) {
   };
 }
 
-test('constructor requires baseUrl and apiKey', () => {
-  assert.throws(() => new InvisibleDB({ baseUrl: '', apiKey: 'k' }), /required/);
-  assert.throws(() => new InvisibleDB({ baseUrl: 'https://x', apiKey: '' }), /required/);
+test('constructor requires only baseUrl', () => {
+  assert.throws(() => new InvisibleDB({ baseUrl: '' }), /required/);
+  assert.doesNotThrow(() => new InvisibleDB({ baseUrl: 'https://x' }));
 });
 
-test('getList builds query params and sends Bearer key', async () => {
+test('server mode sends Bearer instance key', async () => {
   let seen;
   const db = new InvisibleDB({
     baseUrl: 'https://acme.invisibledb.app/',
@@ -41,7 +41,27 @@ test('getList builds query params and sends Bearer key', async () => {
   assert.equal(seen.method, 'GET');
 });
 
-test('401 maps to invalid api key error', async () => {
+test('end-user login works without an instance key and stores the user token', async () => {
+  const seen = [];
+  const db = new InvisibleDB({
+    baseUrl: 'https://acme.invisibledb.app',
+    fetchImpl: mockFetch((url, init) => {
+      seen.push({ url, auth: init.headers.authorization, body: init.body ? JSON.parse(init.body) : null });
+      if (url.endsWith('/auth-with-password')) return json({ token: 'user_jwt_123', record: { id: 'u1', email: 'a@b.com' } });
+      return json({ page: 1, perPage: 30, totalItems: 0, totalPages: 0, items: [] });
+    }),
+  });
+
+  const auth = await db.auth.login('users', 'a@b.com', 'pass');
+  assert.equal(auth.token, 'user_jwt_123');
+  assert.equal(seen[0].auth, undefined);
+  assert.deepEqual(seen[0].body, { identity: 'a@b.com', password: 'pass' });
+
+  await db.collection('messages').getList();
+  assert.equal(seen[1].auth, 'Bearer user_jwt_123');
+});
+
+test('401 surfaces as InvisibleDBError', async () => {
   const db = new InvisibleDB({
     baseUrl: 'https://acme.invisibledb.app',
     apiKey: 'bad',

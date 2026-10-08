@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
 const CUSTOMER_APP_PREFIXES = ['/projects', '/billing', '/byoh', '/hosted', '/dashboard'];
-const DB_SECTIONS = ['overview', 'connect', 'auth', 'database', 'storage', 'vector', 'realtime', 'backups', 'settings'] as const;
+const DB_SECTIONS = ['overview', 'connect', 'auth', 'database', 'storage', 'vector', 'realtime', 'backups', 'logs', 'settings'] as const;
 
 function isCustomerAppRoute(pathname: string) {
   return CUSTOMER_APP_PREFIXES.some(

@@ -26,15 +26,14 @@ fi
 mkdir -p "$IDB_ROOT/keys" "$IDB_ROOT/caddy/sites"
 chmod 700 "$IDB_ROOT/keys"
 
-# 1. API key — the single-key model. Stored 0600, never logged.
+# 1. API key — privileged server/control-plane credential. Browser/mobile apps
+# authenticate end users instead of embedding this key.
 API_KEY="idb_live_$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)"
 printf '%s' "$API_KEY" > "$KEY_FILE"
 chmod 600 "$KEY_FILE"
 
-# 2. Data volume + container on the shared customer network.
-# IDB_PB_IMAGE selects the PocketBase build (default :latest official binary;
-# use :vec for the sqlite-vec custom build once verified — see Dockerfile.vec).
-PB_IMAGE="${IDB_PB_IMAGE:-idb-pocketbase:latest}"
+# 2. Data volume + vec-capable PocketBase runtime on the shared customer network.
+PB_IMAGE="${IDB_PB_IMAGE:-idb-pocketbase:vec}"
 docker volume create "$VOL" >/dev/null
 docker run -d --name "$NAME" \
   --restart unless-stopped \
@@ -46,7 +45,7 @@ docker run -d --name "$NAME" \
   serve --http=0.0.0.0:8090 --dir=/pb/data \
   >/dev/null
 
-# 3. Wait for health, then bootstrap the superuser (used by Phase 2 gateway).
+# 3. Wait for health, then bootstrap the superuser used only behind the gateway.
 for i in $(seq 1 30); do
   if docker exec "$NAME" wget -q -O /dev/null http://localhost:8090/api/health 2>/dev/null; then break; fi
   sleep 2
@@ -56,8 +55,8 @@ docker exec "$NAME" pocketbase superuser upsert "$ADMIN_EMAIL" "$ADMIN_PASS" --d
 printf '%s' "$ADMIN_EMAIL:$ADMIN_PASS" > "$IDB_ROOT/keys/$SLUG.admin"
 chmod 600 "$IDB_ROOT/keys/$SLUG.admin"
 
-# 4. Caddy route -> gateway (validates the Bearer API key, then proxies to
-#    this customer's PocketBase container by Host header).
+# 4. Caddy route -> gateway. The gateway distinguishes the privileged instance
+# key from regular PocketBase end-user auth tokens.
 cat > "$IDB_ROOT/caddy/sites/$SLUG.caddy" <<EOF
 $HOST {
 	reverse_proxy gateway:8080
@@ -69,8 +68,8 @@ echo "--- provisioned ---"
 echo "url:      https://$HOST"
 echo "key file: $KEY_FILE (0600)"
 echo ""
-echo "snippet:"
+echo "server snippet:"
 echo "  const db = new InvisibleDB({"
 echo "    baseUrl: 'https://$HOST',"
-echo "    apiKey: process.env.INVISIBLEDB_KEY, // $KEY_FILE"
+echo "    apiKey: process.env.INVISIBLEDB_KEY, // trusted server runtime only"
 echo "  });"
