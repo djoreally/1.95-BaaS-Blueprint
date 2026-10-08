@@ -8,7 +8,7 @@ ARG VEC_VERSION=v0.1.6
 FROM golang:1.24-alpine AS build
 ARG PB_VERSION
 ARG VEC_VERSION
-RUN apk add --no-cache gcc musl-dev wget
+RUN apk add --no-cache gcc musl-dev sqlite-dev wget
 WORKDIR /src
 
 # Keep PocketBase at a pinned version so the custom runtime and API contract are reproducible.
