@@ -1,79 +1,56 @@
-## Architecture at a glance: cPanel is the substrate
+## Architecture at a glance: the VPS is the substrate
 
-Five layers. Only the top one is software you write; the other four are features the host already runs.
+Five layers. Only the control plane and the provisioning glue are software you write; the rest is standard infrastructure wired together once.
 
 1 Control Plane
 
 Your product.
 
-Web UI + API: create project, set env vars, view logs, attach domain, trigger deploy. Stores project metadata in its own PocketBase/MySQL.
+Next.js on Vercel at www.invisibledb.app: signup, billing (Stripe), API keys, project dashboard, usage. Stores provisioning state in a ProvisionRequest table (Prisma/Postgres) that the VPS poller reads. Docs and marketing ship here too.
 
 You build this
 
 2 Provisioning
 
-cPanel
+Stripe webhook → ProvisionRequest → VPS poller (cron, every 2 min, authenticates with VPS_API_SECRET) → `bin/provision <slug>`, which creates the customer container, writes `/srv/idb/keys/<slug>.key`, and adds the Caddy route. No human touches the box for a new customer. (Deprovision is the mirror image: `bin/deprovision <slug>`.)
 
-UAPI
-
-(subdomains, MySQL, cron, SSL, Node apps) on a single account;
-
-WHM API
-
-(create/suspend accounts, packages) on reseller. All scriptable over HTTPS with API tokens.
-
-Host provides
+You build this; Docker + cron provide it
 
 3 Runtime
 
 One
 
-single binary per project
+PocketBase Docker container per customer
 
-— PocketBase (Go) by default; alternatives: Appwrite is too heavy, Supabase needs Docker/Postgres, a small Node app via the cPanel Node selector is the fallback. SQLite on disk, files on disk.
+— built from the Dockerfile in `deploy/vps/pocketbase` (image built on the box), each with its own isolated SQLite volume under `/srv/idb`. Containers join the `idb-net` bridge network at provision time; they are never exposed publicly. The customer's data is a real file on disk — they can own it outright.
 
-PocketBase
+Docker provides; you script it
 
-4 Proxy / Edge
+4 Edge
 
-Apache + LiteSpeed in front.
+Caddy + auth gateway in front.
 
-.htaccess
+Caddy terminates TLS automatically (Let's Encrypt, wildcard `*.invisibledb.app` — DNS-only to the VPS, grey cloud; apex invisibledb.app points to Vercel) and routes `<slug>.invisibledb.app` → gateway → the customer's container. The gateway validates `Authorization: Bearer <apiKey>` against `/srv/idb/keys/<slug>.key`, timing-safe compares, swaps in a cached PocketBase superuser token, and proxies. Valid key → 200. Bad key → 401, no proxying. PocketBase never sees the internet.
 
-with mod_proxy/mod_rewrite routes
-
-project.yourdomain.com
-
-to
-
-127.0.0.1:
-
-<
-
-port
-
->
-
-. AutoSSL terminates HTTPS. WebSocket/SSE caveats in [§06](06-ports-reverse-proxy.md).
+Caddy provides; the gateway is ~200 lines of dependency-free Node
 
 5 Data / Backup
 
-SQLite files per project, replicated continuously by
-
-Litestream
-
-to Cloudflare R2 or Backblaze B2 free tiers. MySQL available when a workload truly needs it ([§10](10-auth-files-data.md)). Vector embeddings live beside the data — sqlite-vec by default, MySQL options in [§11](11-vector-rag.md).
+SQLite files per customer under `/srv/idb`, snapshotted by host cron into `/srv/idb/backups/` nightly (`bin/backup`). sqlite-vec lives beside the data for vector search — see [§11](11-vector-rag.md). Offsite copies belong to the phase-3 control plane, not the MVP box.
 
 ### Request flow
 
 ```
-Browser → AutoSSL (443) → Apache vhost (subdomain)
-  → .htaccess ProxyPass → 127.0.0.1:8091 (PocketBase)
-  → SQLite (WAL) + pb_data/storage (uploaded files)
-  → Litestream → R2/B2 (offsite, continuous)
+Browser → Caddy (:443, auto-TLS, <slug>.invisibledb.app)
+  → auth gateway (:8080, idb-net) — Bearer API key check:
+      valid   → 200 path continues
+      invalid → 401, nothing proxied
+  → idb-<slug> container (PocketBase, superuser token swapped in)
+  → SQLite volume (WAL) + pb_data/storage (uploaded files)
+  → nightly cron → /srv/idb/backups/ (SQLite snapshots)
 ```
 
 ### Why PocketBase first
 
-One static Go binary (~25 MB) delivers authentication (email/password, OAuth), collections as REST + realtime API, file storage, an admin dashboard, and cron hooks — roughly 80% of Supabase's surface with none of its moving parts. It idles at 30–60 MB RAM in planning estimates, which is the only reason the 1 GB tier works at all. If a host kills arbitrary binaries, the same architecture falls back to a Node app under Passenger ([§05](05-single-binary-apps.md)).
+One static Go binary (~25 MB) delivers authentication (email/password, OAuth), collections as REST + realtime API, file storage, an admin dashboard, and cron hooks — roughly 80% of Supabase's surface with none of its moving parts. It idles at ~27 MB RSS measured (2026-10-05), which is why a $3/mo box can hold a fleet of customer containers — the per-customer cost is one container and one volume, not another server. SQLite is not a compromise here; it is the thesis: the customer's database is a file they own, no Postgres instance to babysit, no bill to fear.
  — Phase 0

@@ -2,46 +2,45 @@ Product Blueprint
 
 •
 
-Shared-Hosting Infrastructure
+VPS/Docker Infrastructure
 
 •
 
 October 2026
 
-# The $1.95 
-*BaaS* Blueprint
+# InvisibleDB: the invisible backend
 
-A Coolify-style platform for the tier Coolify cannot reach: cheap cPanel shared hosting. One control plane, single-binary backends, and a repeatable recipe that turns a $2/month hosting account into auth, database, files, realtime, and deploys for a portfolio of side projects.
+Auth, database, files, vector embeddings, and one snippet to wire them all — for indie devs who fear the Firebase bill. You give us an email address; we provision an isolated, secure SQLite database in the cloud instantly. Paste one snippet, hold your API key in an environment variable, and go back to building your actual app features.
 
-OrangeHost Micro as reference
+InterServer VPS as reference
 
-5 GB NVMe
+vps3695717.trouble-free.net (66.23.224.55)
 
-1 CPU / 1 GB RAM
+$3/mo price-locked, Ubuntu 24.04, Docker
 
-PocketBase pattern
+PocketBase per customer
 
-cPanel UAPI substrate
+Caddy edge + auth gateway
 
-Vector / RAG ready
+Vector-ready (sqlite-vec)
 
 The wedge
 
-Coolify starts at Docker + VPS + 2 GB RAM. Millions of developers start at $2 shared hosting. Nobody has built the PaaS for that floor.
+Coolify starts at "bring your own server and manage it." Firebase starts free and bills you when you succeed. Millions of indie devs start with one app and one fear: the bill. Nobody sells them *infrastructure they never have to think about* at a price below a coffee.
 
 The trick
 
-Do not fight shared hosting. Use what it already gives you: subdomains, MySQL, cron, SSL, Node selector, and Apache - orchestrated through UAPI.
+A $3/mo VPS plus Docker plus one control plane: the customer never sees the box. Per-customer PocketBase containers with isolated SQLite volumes, Caddy auto-TLS on `*.invisibledb.app`, an auth gateway that turns one API key into full backend access, and a Stripe-webhook → VPS-poller provisioning loop that needs zero human touch. The database file is theirs — no lock-in.
 
 The payoff
 
-Each new project costs minutes and megabytes, not another $20/month VPS. Perfect for a 10-20 app portfolio that compounds.
+$6.99/seat at ~9x margin on ≈$0.76/seat — reseller pricing that undercuts PocketHost's $9.99 while staying real money, not "free tier that bills you later." Each new customer costs one container and one SQLite volume, provisioned in about two minutes.
 
 ### Read this in one sitting, build it in four weeks
 
-Phase 0 cleans the box. Phases 1-2 prove a single PocketBase project end-to-end. Phase 3 turns the manual steps into the product itself: the control plane that other low-budget developers will want to spread.
+Phase 0 keeps the $3 box healthy. Phases 1-2 prove a single customer container end-to-end. Phase 3 turns the manual provisioning steps into the product itself: the control plane at www.invisibledb.app that other indie developers will want to buy.
 
-Reference substrate verified October 5, 2026: OrangeHost Web Hosting-Micro for momsoilchange.com - $1.95/mo, 5 GB NVMe (2.5 GB used), unlimited MySQL, Node 6-20, Python/Ruby/Git, jailed SSH, no PostgreSQL. Numbers elsewhere are planning estimates and are labelled as such. Host capabilities vary; run the preflight in [§17](17-build-roadmap.md) before promising a feature on a new host.
+Reference substrate verified October 7, 2026: InterServer KVM VPS Slice (Ubuntu, vps3695717.trouble-free.net, 66.23.224.55) — $3/mo price-locked; Docker + Caddy + auth gateway + PocketBase v0.36.5 container verified live. Numbers elsewhere are planning estimates and are labelled as such. Host capabilities vary; run the preflight in [§17](17-build-roadmap.md) before promising a feature on a new substrate.
 
 Contents
 
@@ -57,27 +56,27 @@ Architecture at a glance
 
 03
 
-Phase 0: the storage and resource diet
+Phase 0: VPS resource hygiene
 
 04
 
-Shared-hosting constraints you design around
+What the VPS gives you — and the discipline it still needs
 
 05
 
-Running non-root single binaries (PocketBase pattern)
+Running one container per customer (PocketBase pattern)
 
 06
 
-Ports and reverse proxying through Apache
+Caddy as your ingress
 
 07
 
-Process supervision without systemd
+Process supervision without systemd babysitting
 
 08
 
-Multi-project pattern under 1 GB RAM
+Multi-project pattern under a $3 box
 
 09
 
@@ -93,11 +92,11 @@ Vector search and AI memory (RAG)
 
 12
 
-Backups: Litestream to R2/B2 + restore drills
+Backups: SQLite snapshots + restore drills
 
 13
 
-Push-to-deploy on shared hosting
+Push-to-deploy on the VPS
 
 14
 
@@ -105,11 +104,11 @@ The control plane — the Coolify-style product
 
 15
 
-The Reseller Tier — the real multi-tenant substrate
+The Reseller Tier — isolated accounts per customer
 
 16
 
-Limits, failure modes, and the VPS escape hatch
+Limits, failure modes, and the second-box escape hatch
 
 17
 
@@ -121,26 +120,26 @@ Reference kit and preflight checklist
 
 ### 01 What this is — and what it is not
 
-This blueprint builds **a PaaS experience on shared-hosting primitives**. The developer connects a repo, picks a name, and gets a live URL with SSL, a backend with auth and a database, logs, env vars, and backups — the Coolify flow — without ever provisioning a VPS.
+This blueprint builds **a backend the customer never thinks about**. The developer signs up, gets an API key, and pastes one snippet — auth, database, files, realtime, and vector search just work at `<slug>.invisibledb.app`, over TLS, from day one. They never touch the VPS, never configure TLS, never see a container.
 
 It is
 
-- A control plane over cPanel UAPI and WHM API
-- A single-binary backend pattern (PocketBase first)
-- A playbook for $2–$98/month hosting tiers
-- Spreadable: any cPanel host, not just OrangeHost
+- A control plane (Next.js on Vercel) that provisions backends on a $3/mo Docker VPS
+- One PocketBase container per customer, each with its own isolated SQLite volume
+- A priced product: $6.99/mo per seat, first month $1 — ~9x margin at ≈$0.76/seat
+- Spreadable: the same recipe works on any Docker VPS, not just InterServer
 
 It is not
 
-- Docker on shared hosting (impossible without root)
-- A Supabase clone (no Postgres on this tier)
-- A Coolify fork (different substrate entirely)
-- Production infra for heavy traffic on day one
+- A Supabase clone (no Postgres — SQLite is the whole point, and the customer owns the file)
+- A Coolify fork (customers get an API key, not a server dashboard)
+- A bring-your-own-Firebase story (no surprise billing curve — flat $6.99)
+- Production infra for heavy traffic on one $3 box on day one (see [§16](16-resource-budgets-limits.md))
 
 ### The thesis in one line
 
-Coolify sells convenience on hardware the user rents by the month. This platform sells the same convenience on hardware the user *already* rents for $2 — and that is why it spreads: the substrate is already in their pocket.
+Firebase sells the backend and rents you the anxiety; this platform sells the backend and deletes the anxiety — $3/mo of VPS plus Docker plus one control plane becomes $6.99/seat of invisible backend, with a SQLite file the customer actually owns.
 
 ### Who it is for
 
-Indie developers, students, bootcamp grads, and small-shop builders with three to twenty side projects, each too small to justify a $20 VPS, all of them currently scattered across free-tier dashboards that expire, throttle, or shut down. Your own portfolio — ten to twenty small apps, each with ten to twenty users — is the reference customer.
+Indie developers, students, bootcamp grads, and small-shop builders with three to twenty side projects, each too small to justify per-project infrastructure, all of them currently choosing between free tiers that expire, throttle, or shut down — and Firebase bills that spike when something works. Your own portfolio — ten to twenty small apps, each with ten to twenty users — is the reference customer. The Dart SDK makes it first-class for mobile devs too, but it is not Flutter-only: JS SDK, REST, `idb` CLI, and an MCP server cover everything else.

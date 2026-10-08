@@ -1,7 +1,7 @@
 # InvisibleDB — Agent Guide
 
 > This document is written for AI agents (Muse, Claude Code, and friends).
-> If you are a human, start at [baas.innovarel.dev](https://baas.innovarel.dev).
+> If you are a human, start at [invisibledb.app](https://www.invisibledb.app).
 > If you are an agent, this is your operating manual.
 
 ## What InvisibleDB is
@@ -48,7 +48,7 @@ config — see `packages/mcp-server/README.md`):
       "command": "node",
       "args": ["/path/to/packages/mcp-server/dist/index.js"],
       "env": {
-        "INVISIBLED_API_URL": "https://baas.innovarel.dev",
+        "INVISIBLED_API_URL": "https://www.invisibledb.app",
         "INVISIBLED_API_KEY": "<your-key>"
       }
     }
@@ -61,7 +61,7 @@ Tools: `idb_provision`, `idb_list`, `idb_keys`, `idb_query`, `idb_gate_check`.
 ### Via CLI (preferred for scripts and terminals)
 
 ```bash
-export INVISIBLED_API_URL="https://baas.innovarel.dev"
+export INVISIBLED_API_URL="https://www.invisibledb.app"
 export INVISIBLED_API_KEY="<your-key>"
 
 idb init            # wizard: name -> provisions
@@ -82,7 +82,7 @@ Get keys first (`idb_keys` / `idb keys`), then use them. Two paths:
 ```dart
 import 'package:pocketbase/pocketbase.dart';
 
-final pb = PocketBase('https://<instance>.invisibledb.io');
+final pb = PocketBase('https://<slug>.invisibledb.app');
 pb.authStore.save('<api-key>', null);
 
 final notes = await pb.collection('notes').getFullList(
@@ -93,14 +93,14 @@ final notes = await pb.collection('notes').getFullList(
 **REST (any runtime):**
 
 ```bash
-curl "https://<instance>.invisibledb.io/api/collections/notes/records?filter=done%3Dfalse" \
+curl "https://<slug>.invisibledb.app/api/collections/notes/records?filter=done%3Dfalse" \
   -H "Authorization: Bearer <api-key>"
 ```
 
 **Vector search** (built in — no Pinecone account):
 
 ```bash
-curl -X POST "https://<instance>.invisibledb.io/api/vector/query" \
+curl -X POST "https://<slug>.invisibledb.app/api/vector/query" \
   -H "Authorization: Bearer <api-key>" \
   -H "Content-Type: application/json" \
   -d '{"collection": "docs", "vector": [0.12, -0.03, "..."], "k": 5}'
@@ -148,7 +148,7 @@ ledger.append({
   action: 'provision_instance',
   input: { name: 'acme-crm' },
   output: { instanceId: 'inst_1', status: 'ready' },
-  evidenceRefs: ['uapi-call-log:9f3a…'],
+  evidenceRefs: ['provision-log:9f3a…'],
 });
 ```
 
@@ -203,7 +203,7 @@ and checks a gate — the full loop:
 ```text
 1. PROVISION (MCP)
    → idb_provision { name: "agent-notes" }
-   ← { id: "inst_7", fqdn: "agent-notes.invisibledb.io", status: "provisioning" }
+   ← { id: "inst_7", fqdn: "agent-notes.invisibledb.app", status: "provisioning" }
 
 2. POLL (evidence, not hope)
    → idb_list
@@ -218,7 +218,7 @@ and checks a gate — the full loop:
    ← { id: "rec_1", … }                                    ← evidence acquired
 
 5. MEMORY (ZeroAI)
-   → memory.remember("Notes instance inst_7 serves agent-notes.invisibledb.io", "projects", { key: "notes-instance" })
+   → memory.remember("Notes instance inst_7 serves agent-notes.invisibledb.app", "projects", { key: "notes-instance" })
 
 6. LEDGER (ZeroAI)
    → ledger.append({ workspaceId: "agent-notes", actor: "agent:backend",
@@ -247,4 +247,4 @@ product.
 - `packages/mcp-server/README.md` — MCP setup for Claude Code / Desktop
 - `packages/cli/README.md` — CLI install and usage
 - `packages/zeroai-addon/` — the deterministic OS source of truth
-- `docs/14-control-plane.md`, `docs/15-reseller-tier.md` — platform context
+- `docs/14-control-plane.md`, `docs/15-reseller-tier.md` — platform context (unit economics)

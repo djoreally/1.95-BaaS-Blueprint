@@ -1,33 +1,41 @@
-## Backups you can restore: Litestream to free object storage
+## Backups you can restore: nightly SQLite dumps, off-box copy
 
-A backup you have never restored is a hope, not a backup. This recipe is continuous, offsite, and costs $0 at side-project scale.
+A backup you have never restored is a hope, not a backup. On this substrate the recipe is honest about its RPO: **last night, not last second** — continuous Litestream replication is the Phase 4 upgrade; what runs today is a 02:00 cron dump plus an off-box copy, both real and both verifiable.
 
 ### The recipe
 
-```yaml
-# litestream.yml (per project)
-dbs:
-  - path: /home/USER/apps/myapp/pb_data/data.db
-    replicas:
-      - type: s3
-        bucket: myapp-backups
-        path: myapp
-        endpoint: https://ACCOUNT_ID.r2.cloudflarestorage.com
-        sync-interval: 10s
+`/etc/cron.d/idb-backup` → `0 2 * * * root /srv/idb/bin/backup >/var/log/idb-backup.log 2>&1`
+
+For every running `idb-<slug>` container, `bin/backup`:
+
+1. Runs `sqlite3 /pb/data/data.db ".backup '/tmp/<name>-<date>.db'"` **inside the container** — online, no downtime, WAL handled correctly (never `cp` a live database file).
+2. `docker cp`s the dump to `/srv/idb/backups/<slug>-<date>.db.gz` and compresses it.
+3. Enforces retention: newest 11 files per customer (≈ 7 daily + 4 weekly).
+
+Then the off-box copy, fifteen minutes later:
+
+```cron
+# /etc/cron.d/idb-backup — off-box copy, 02:15
+15 2 * * * root rsync -a --delete /srv/idb/backups/ <offsite-host>:/idb-backups/
 ```
 
-- Cloudflare R2 free tier or Backblaze B2 free tier — either works; keys scoped to one bucket per project.
-- Litestream ships WAL segments continuously, so restore point objective is seconds, not last night.
-- Nightly, also snapshot pb_data/storage (uploaded files) with rclone to the same bucket — Litestream covers the database only.
-- Retain 30 days; test-restore monthly into a scratch subdomain and record the result.
+Two copies, two machines, one cron line each. The restore point objective is last night's 02:00 dump — say so in the product copy; do not oversell continuous replication until Phase 4 ships it.
+
+**Known gap, stated plainly:** `bin/backup` covers `data.db`. Uploaded files live in the same customer volume (`/pb/data/storage`) but are not part of the `.backup` — they need a volume-level copy, which is the open item the Phase 4 object-storage upgrade closes. The dashboard must never claim files are backed up until that path exists and is drill-tested.
 
 ### Restore drill (the part everyone skips)
 
-```sql
-litestream restore -o /tmp/restore-test.db s3://myapp-backups/myapp
+Monthly, per customer, into a scratch container — not into production:
+
+```bash
+gunzip -c /srv/idb/backups/acme-2026-10-08.db.gz > /tmp/restore-test.db
 sqlite3 /tmp/restore-test.db "PRAGMA integrity_check; SELECT count(*) FROM _admins;"
+# then: restore the file into a throwaway idb-restore-test container,
+# boot it, and click through the customer's app against it.
 ```
+
+Record the result with the date. A drill that passes is evidence; a drill that fails is the cheapest incident you will ever have.
 
 ### Productize it
 
-The control plane shows each project a last-replicated timestamp pulled from Litestream's status — a "backed up 12s ago" line in the dashboard is a trust feature competitors on free tiers do not show. Claim it only from the live timestamp, never from the cron schedule.
+The control plane shows each customer a last-backup timestamp pulled from the real file in `/srv/idb/backups/` — a "backed up 6h ago" line in the dashboard is a trust feature competitors on free tiers do not show. Claim it only from the live file mtime, never from the cron schedule. If the 02:00 cron silently stops, the dashboard timestamp goes stale — that staleness is itself the alert, which is why the timestamp is computed from evidence, not from the crontab.

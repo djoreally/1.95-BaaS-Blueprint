@@ -1,47 +1,37 @@
-## Vector search and AI memory: RAG on a $2 box
+## Vector search and AI memory: RAG on a $3 box
 
-Every BaaS in 2026 gets asked the same question: “can it do semantic search?” On this stack the answer is yes — without Postgres, without pgvector, and without a second database server. You add a vector collection beside the data you already have.
+Every BaaS in 2026 gets asked the same question: "can it do semantic search?" On this stack the answer is yes — without Postgres, without pgvector, and without a second database server. You add a vector collection beside the data you already have.
 
 ### The position this blueprint takes
 
-**Default: sqlite-vec** inside the project’s existing SQLite file. It fits the architecture you already run — one file per project, Litestream already backs it up, zero extra RAM, zero daemon. **MySQL paths below are the fallback** when the payload already lives in MySQL or the team wants SQL-only. The **hybrid HNSW path is the scale exit** when a single project outgrows brute-force scan. MySQL 9.0 native `VECTOR` is documented for completeness — verify your host actually runs 9.0 before designing on it; most shared hosts run MySQL 8.0 or MariaDB.
+**Default: sqlite-vec** inside the customer's existing SQLite file. It fits the architecture you already run — one file per customer, the nightly backup already covers it, zero extra RAM, zero daemon. The **hybrid HNSW path is the scale exit** when a single customer outgrows brute-force scan. There are no MySQL paths in this document: there is no MySQL on the box, and vector search does not get to be the reason one appears.
 
-### What “connect” means when you are done
+On the substrate: `deploy/vps/pocketbase/Dockerfile.vec` carries the sqlite-vec custom build, and `bin/provision` selects it with `IDB_PB_IMAGE=idb-pocketbase:vec` — the same provisioning path, no special cases. Rollout is Phase 3; the design position is fixed now so nothing built on `:latest` has to be re-architected for `:vec`.
 
-A project exposes vector search the same way it exposes everything else: over HTTPS through the subdomain you already provisioned. No direct MySQL port is opened to the internet (shared hosting does not give you one you should use, and you would not want it). Frontends and scripts connect in three sanctioned ways:
+### What "connect" means when you are done
+
+A customer exposes vector search the same way it exposes everything else: over HTTPS through the subdomain you already provisioned, authenticated by the InvisibleDB API key. No direct database port is opened to the internet — there is nothing to open; the database lives in a Docker volume behind the gateway.
 
 | Consumer | How it connects | Auth |
 | --- | --- | --- |
-| Browser / mobile app | PocketBase REST + a custom hook endpoint, e.g. `POST /api/search` on `project.yourdomain.com` | PocketBase user token (Bearer) |
-| Server script / cron job | Same HTTPS endpoint, or direct file access over SSH on the box | Admin token or SSH key |
-| Control plane | Creates the collection, stores embedding-model config as env vars, shows doc/vector counts | UAPI + project admin API |
+| Browser / mobile app | HTTPS `POST /api/search` on `<slug>.invisibledb.app` (gateway validates, proxies to the customer's container) | InvisibleDB API key (`Bearer idb_live_…`) |
+| Server script / SDK | Same HTTPS endpoint, or the ZeroMemory agent interface (`docs/agents.md`) | Same API key, via env var |
+| Control plane | Creates the collection, stores embedding-model config per customer, shows doc/vector counts | Superuser path, server-side only |
 
 ```
 // Minimal client shape (any language, same idea)
-POST https://myapp.yourdomain.com/api/search
-Authorization: Bearer <user-token>
+POST https://acme.invisibledb.app/api/search
+Authorization: Bearer idb_live_abc123…
 { "query": "how do refunds work?", "collection": "docs", "k": 5 }
 // -> { "results": [{ "id": "...", "content": "...", "distance": 0.21 }] }
 ```
 
-Embedding generation itself is an outbound HTTPS call (OpenAI, Cohere, Voyage, or a hosted open model) from the PocketBase hook — the shared box never runs a transformer. At 1 GB RAM that is a constraint to design around, not a gap to apologise for: generation is rented, storage and retrieval are owned. Cache embeddings on write; never re-embed unchanged content.
+Embedding generation itself is an outbound HTTPS call (OpenAI, Cohere, Voyage, or a hosted open model) from the customer's PocketBase hook — the $3 box never runs a transformer. At 1 vCPU that is a constraint to design around, not a gap to apologise for: generation is rented, storage and retrieval are owned. Cache embeddings on write; never re-embed unchanged content.
 
-### First, check what your MySQL actually is
-
-```sql
-SELECT VERSION();  -- e.g. 8.0.x or 10.x-MariaDB decides which options exist
-SHOW VARIABLES LIKE 'version%';
-```
-
-Run this in phpMyAdmin before choosing a path. MySQL 9.0+ unlocks Option A. MySQL 8.0 / MariaDB means Option B or C (or sqlite-vec, which does not care). MariaDB 10.7+ has its own `VECTOR` type and distance functions on some builds — treat it as “verify on your host,” not as a promise.
- — continued
-
-## Three MySQL paths, one default, one scale exit
-
-### Recommended default (not MySQL): sqlite-vec in the project file
+### Recommended default: sqlite-vec in the customer file
 
 ```sql
--- Inside pb_data/data.db — ships with the file Litestream already replicates
+-- Inside the customer's data.db — ships with the file the backup already covers
 CREATE VIRTUAL TABLE vec_docs USING vec0(
   embedding float[1536]
 );
@@ -50,111 +40,27 @@ SELECT rowid, distance FROM vec_docs
 WHERE embedding MATCH ? AND k = 5 ORDER BY distance;
 ```
 
-Why this wins on shared hosting: no new server, no stored-procedure permissions to negotiate, works identically on Micro and per-account reseller seats, and restores with the database. Load the extension from the PocketBase process or a small Go/Python sidecar — see the hybrid note below if you outgrow it.
- — continued
-
-## MySQL native and 8.0 paths
-
-### Option A — MySQL 9.0+ native VECTOR (when the host truly runs 9.0)
-
-```sql
-CREATE TABLE embeddings (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  document_id VARCHAR(255) NOT NULL,
-  content TEXT,
-  embedding VECTOR(1536) NOT NULL  -- match model dims (e.g. 1536)
-);
-INSERT INTO embeddings (document_id, content, embedding) VALUES (
-  'doc_001', 'PocketBase is a single-binary backend solution.',
-  STRING_TO_VECTOR('[0.012, -0.045, 0.321, ...]')
-);
-SELECT document_id, content,
-  DISTANCE(embedding, STRING_TO_VECTOR('[0.015, -0.040, 0.310, ...]'), 'COSINE') AS distance
-FROM embeddings ORDER BY distance ASC LIMIT 5;
-```
- — continued
-
-## MySQL 8.0: the shared-hosting workhorse
-
-### Option B — MySQL 8.0: JSON storage + pure-SQL cosine (the shared-hosting workhorse)
-
-Exact nearest-neighbour by table scan. Slow, honest, and entirely sufficient for prototypes and small corpora. Store the JSON, create the function once per database:
-
-```sql
-CREATE TABLE embeddings (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  document_id VARCHAR(255) NOT NULL,
-  content TEXT,
-  vector_json JSON NOT NULL
-);
-
-DELIMITER //
-CREATE FUNCTION COSINE_DISTANCE(a JSON, b JSON)
-RETURNS DOUBLE DETERMINISTIC
-BEGIN
-  DECLARE i INT DEFAULT 0; DECLARE len INT;
-  DECLARE dot_product DOUBLE DEFAULT 0.0;
-  DECLARE norm_a DOUBLE DEFAULT 0.0; DECLARE norm_b DOUBLE DEFAULT 0.0;
-  DECLARE val_a DOUBLE; DECLARE val_b DOUBLE;
-  SET len = JSON_LENGTH(a);
-  WHILE i < len DO
-    SET val_a = CAST(JSON_EXTRACT(a, CONCAT('$[', i, ']')) AS DOUBLE);
-    SET val_b = CAST(JSON_EXTRACT(b, CONCAT('$[', i, ']')) AS DOUBLE);
-    SET dot_product = dot_product + (val_a * val_b);
-    SET norm_a = norm_a + (val_a * val_a);
-    SET norm_b = norm_b + (val_b * val_b);
-    SET i = i + 1;
-  END WHILE;
-  IF norm_a = 0 OR norm_b = 0 THEN RETURN 1.0; END IF;
-  RETURN 1.0 - (dot_product / (SQRT(norm_a) * SQRT(norm_b)));
-END //
-DELIMITER ;
-
-SELECT document_id, content,
-  COSINE_DISTANCE(vector_json, '[0.012, -0.045, 0.321, ...]') AS distance
-FROM embeddings ORDER BY distance ASC LIMIT 5;
-```
- — continued
-
-## Running it on shared hosting
-
-Shared-hosting caveats: stored functions may require `CREATE ROUTINE` privilege — if the host denies it, the same math moves into app code over fetched rows (Option C), no schema change. Always pre-filter (`WHERE tenant / collection`) before scanning.
+Why this wins on this substrate: no new server, no new daemon, works identically for every customer because every customer is one file, and it restores with the database. The `:vec` image loads the extension in the PocketBase process.
 
 ### Control-plane surface for vectors
 
-Per project: embedding model + dimensions (env vars, never hardcoded), collection list with vector counts, a “test query” box calling the project’s own endpoint, and the same backup story as the rest of the data. Dimension changes are a new collection, never an in-place alter.
- — continued
+Per customer: embedding model + dimensions (config, never hardcoded), collection list with vector counts, a "test query" box calling the customer's own endpoint, and the same backup story as the rest of the data ([§12](12-backups-maintenance.md)). Dimension changes are a new collection, never an in-place alter.
 
-## From scan to index: the scale path
-
-### Option C — Normalised vectors in a BLOB + dot product (the fast SQL-adjacent path)
-
-When embeddings are pre-normalised (|v| = 1, standard for OpenAI/Cohere output), cosine similarity *is* the dot product: no norms, no division. Pack float32 arrays into a `BLOB` at the language layer (Go `binary.Write`, Python `struct.pack`), store it beside the payload, and compute the dot product in app code over candidate rows. MySQL stays the durable store; arithmetic happens where it is cheap — the bridge to the hybrid design below.
+### From scan to index: the scale path
 
 | Strategy | Speed | Comfortable scale | Best for |
 | --- | --- | --- | --- |
-| **sqlite-vec (default)** | Fast for size | ~10k–100k vectors per project | The blueprint’s standard project |
-| MySQL 9.0 native VECTOR | Moderate | ~100k vectors | Hosts verified on 9.0; simple built-in RAG |
-| MySQL 8.0 JSON + stored proc | Slow (table scan) | < 10k vectors | Prototyping, low-data side projects, SQL-only teams |
-| BLOB + app-layer dot product | Faster than JSON scan | ~10k–50k with pre-filtering | Normalised embeddings, MySQL payload already exists |
+| **sqlite-vec (default)** | Fast for size | ~10k–100k vectors per customer | The blueprint's standard customer |
 | Hybrid: store in DB + in-memory HNSW | Very fast (< 10 ms) | Millions | The scale exit (below) |
 
-### The scale exit: hybrid architecture (production pattern)
+sqlite-vec gives exact scan, not ANN. When latency stops being acceptable, add an index in front of the data — do not migrate it:
 
-MySQL/SQLite give exact scan, not ANN (HNSW/IVFFlat). When latency stops being acceptable, add an index in front of the data — do not migrate it:
+1. Store relational data and full payload vectors in the customer's SQLite file (source of truth, backed up as always).
+2. Build an in-memory HNSW index in the customer's own container (Go usearch, Python hnswlib as a sidecar in the same 256 MB envelope), loaded from the database on boot.
+3. Query the in-memory index for vector IDs, then hydrate: `SELECT ... WHERE id IN (...)` for content, permissions, and tenant filtering.
 
-1. Store relational data and full payload vectors in MySQL/SQLite (source of truth, backed up as always).
-2. Build an in-memory HNSW index in the backend process (Go usearch, Python hnswlib) loaded from the database on boot.
-3. Query the in-memory index for vector IDs, then hydrate: SELECT ... WHERE id IN (...) for content, permissions, and tenant filtering.
+Frontend contract unchanged: same `/api/search` endpoint. The HNSW index lives inside the customer's container, so the customer's memory envelope ([§08](08-multi-tenant-pattern.md)) is the honest budget for it — a customer needing millions of vectors is a customer whose envelope conversation has already happened.
 
-On Micro this is a per-project opt-in inside the 1 GB ceiling; on reseller it gets its own LVE envelope. Frontend contract unchanged: same `/api/search` endpoint.
+### Decision: PostgreSQL stays out
 
-## Measured finding: PostgreSQL on OrangeHost Micro (2026-10-05)
-
-cPanel exposes a PostgreSQL Databases UI and `psql` 16.15 client exists on the box, with a server process answering on TCP 5432 — but it is **not usable from user accounts**:
-
-- `pg_hba.conf` rejects all TCP connections from cPanel users (`no pg_hba.conf entry for host "::1"/"127.0.0.1"`, no-encryption entries only); the server does not support SSL, so there is no TCP path without root access to edit pg_hba.
-- The Unix socket path is a dangling symlink: `/tmp/.s.PGSQL.5432 -> /var/run/postgres/.s.PGSQL.5432`, and `/var/run/postgres/` does not exist. No live socket exists anywhere under /tmp or /var/run.
-- The cPanel UI will create databases/users that can never be connected to.
-
-**Decision:** PostgreSQL/pgvector stays OUT of the substrate options. The vector ladder remains sqlite-vec (default) → MySQL fallbacks → hybrid HNSW scale exit. Revisit only if the host opens pg_hba or fixes the socket.
+Postgres was evaluated twice and ruled out both times. The old substrate had a fenced-off, unusable install; on this substrate we *could* run it — but pgvector would add a second data system per customer, a second backup path per customer, and RAM the $3 box does not have, all to solve a problem sqlite-vec already solves inside the one file each customer owns. The vector ladder stays: **sqlite-vec (default) → hybrid HNSW scale exit.** Revisit only when a customer's envelope, not the substrate, demands it.

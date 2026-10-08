@@ -1,31 +1,27 @@
-## Design around the cage: shared-hosting constraints
+## What the VPS gives you — and the discipline it still needs
 
-| Constraint | Reality on cPanel shared | Design answer |
+The old story was "design around the cage": no root, no Docker, LVE limits, hosts killing processes. That story is over. You have root, Docker, systemd, and cron on a $3/mo Ubuntu 24.04 box. The constraints that remain are fewer — but they are real, and the honest ones are economic and architectural, not permission-based.
+
+| Constraint | Reality on the InterServer VPS | Design answer |
 | --- | --- | --- |
-| No root, no systemd | You cannot install services | Cron watchdog + start scripts (Sec. 07) |
-| No Docker | Hard no, not a maybe | Single binaries + Node selector (Sec. 05) |
-| CloudLinux LVE limits | CPU/RAM/IO/entry-process caps per account; hitting them = 508 errors | Memory budget (Sec. 08); reseller isolates per tenant (Sec. 14) |
-| No Postgres (this tier) | Micro lists MySQL only | SQLite primary; MySQL when justified (Sec. 10) |
-| Process killers | Some hosts reap long-running background processes | Preflight test (Sec. 17); Passenger fallback |
-| Shared IP / Apache front | You do not bind 80/443 | High ports + .htaccess proxy (Sec. 06) |
-| Cron granularity | Often 1-minute minimum, sometimes 15 | Watchdog interval = host minimum; design for it |
-| Outbound restrictions | SMTP often relay-only; some ports blocked | Transactional email via API (Resend-style), backups via HTTPS to R2/B2 |
+| A $3/mo box is small | Slice RAM and disk are modest; one box is not a fleet | Per-customer memory budget ([§16](16-resource-budgets-limits.md)); Phase 0 diet stays on forever ([§03](03-phase-0-resource-diet.md)) |
+| Single point of failure | One VPS = one blast radius | Nightly SQLite snapshots ([§12](12-backups-maintenance.md)); second-box migration plan in [§16](16-resource-budgets-limits.md) |
+| No managed Postgres | There is no RDS here | SQLite is primary by design, not by compromise — the customer owns the file ([§10](10-auth-files-data.md)) |
+| Outbound email | No mail server worth running on a slice | Transactional email via API (Resend-style); never SMTP off the box |
+| Shared IP / residential reputation | Port 25 blocked, IP may be on blocklists | Same answer: API-based email; backups go over HTTPS |
+| One operator | You are the whole SRE team | Everything provisioned by scripts (`bin/provision`, `bin/backup`), supervised by compose `restart: unless-stopped` + a 2-minute watchdog poller |
 
 ### The mindset shift
 
-On a VPS you ask "what can I install?" On shared hosting you ask "what is already running that I can orchestrate?" Apache, MySQL, cron, SSL issuance, DNS, and the Node runtime are all managed for you — that managed-ness is the product's leverage, not its limitation. Your control plane is an orchestrator of host features, exactly as Coolify is an orchestrator of Docker.
+On shared hosting the question was "what is already running that I can orchestrate?" On your own VPS the question is "what do I stop needing to orchestrate?" TLS issuance (Caddy), container lifecycle (compose), scheduling (cron) — all solved problems now. What remains is the discipline: sizing per customer, pruning Docker, keeping the backups honest, and never letting one customer's growth take the box down for everyone else.
 
-## Measured on OrangeHost Micro (2026-10-05) — Week 1 verdict: GO
+## Measured on the InterServer VPS (2026-10-07)
 
-PocketBase v0.36.5 downloaded (12.1 MB), extracted, and served on 127.0.0.1:8091:
-- `GET /api/health` → **HTTP 200**
-- Idle RSS: **27,744 KB (~27 MB)** — far under the 150 MB budget; ~6 instances fit comfortably in 1 GB with headroom for the supervisor and spikes.
+Docker + Caddy + auth gateway + one PocketBase v0.36.5 customer container verified live end-to-end:
 
-Substrate confirmed:
-- Disk: account dirs total ~1.6 GB of quota; host 2 TB at 50% (host-wide figure).
-- MySQL **8.0.43** (Community) — JSON fallback path confirmed, no native VECTOR (not 9.0).
-- PHP 8.1.34 (cli), Node v16.20.2, Python 3.6.8.
-- Shell limits generous: open files 1,048,576; max user processes unlimited; virtual memory unlimited. (Host-wide CPU/mem figures — 12 cores / 78 GB — are the node, not the LVE slice.)
-- PostgreSQL ruled out separately (see docs/11-vector-rag.md): installed but fenced off, no usable connection path.
+- `GET /api/health` through the full chain — Caddy (443, auto-TLS on `<slug>.invisibledb.app`) → gateway (Bearer key check) → customer container → **HTTP 200**
+- Bad API key → **401**, no proxying — PocketBase never sees the internet or the key
+- Gateway key swap: customer's `Bearer` key is timing-safe-compared against `/srv/idb/keys/<slug>.key`, then a cached PocketBase superuser token is proxied — one re-auth retry on PB 401
+- Idle RSS per customer container: ~27 MB — consistent with the earlier shared-host measurement (2026-10-05), which is why the per-customer memory budget in [§16](16-resource-budgets-limits.md) works on a slice
 
-Survival re-check 2026-10-05 ~22:19 EDT (9.5 min elapsed): same PID, health HTTP 200, RSS steady at ~26 MB (26,420 KB vs 27,744 KB at start — no leak). CloudLinux does not reap it in the short term; the 2-minute watchdog covers the long term regardless.
+This was the highest-risk assumption in the new architecture — that a $3 box could hold the edge, the gateway, and a growing fleet of customer containers with honest isolation. The measurement says yes. The budget in [§16](16-resource-budgets-limits.md) says how many.

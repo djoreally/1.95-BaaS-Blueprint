@@ -1,39 +1,42 @@
-## Ports and proxying: Apache is your ingress
+## Caddy is your ingress
 
-### Port allocation
+### The pattern: one Caddyfile entry per customer
 
-Keep a registry — a plain table in the control plane — so projects never collide. Planning pattern on a single account:
-
-| Range | Use |
-| --- | --- |
-| 8091–8099 | PocketBase instances (one per project) |
-| 8100–8199 | Node/Passenger-adjacent custom apps |
-| 8200+ | Reserved: control plane internals, Litestream metrics |
-
-### The .htaccess proxy (subdomain document root)
+Each customer gets a route file at `/srv/idb/caddy/sites/<slug>.caddy`, written by `bin/provision` and removed by `bin/deprovision`, followed by `docker compose exec caddy caddy reload` (zero-downtime — existing connections are untouched):
 
 ```
-# ~/public_html/myapp/.htaccess  (mod_proxy + mod_rewrite hosts)
-RewriteEngine On
-RewriteCond %{REQUEST_URI} ^/api/.* [OR]
-RewriteCond %{REQUEST_URI} ^/_/.*
-RewriteRule ^(.*)$ http://127.0.0.1:8091/$1 [P,L,QSA]
-# WebSocket/SSE: PocketBase realtime uses SSE over HTTP,
-# which survives this proxy; true WebSockets need
-# mod_proxy_wstunnel and many shared hosts disable it —
-# verify in preflight, degrade to polling if absent.
+# /srv/idb/caddy/sites/<slug>.caddy
+<slug>.invisibledb.app {
+    reverse_proxy gateway:8080
+}
 ```
 
-If `mod_proxy` is unavailable (some hosts disable the `[P]` flag), the fallback is cPanel's Node selector for the app itself, or a tiny PHP reverse-proxy shim as a last resort — functional, slower, and a signal to prefer reseller ([§14](14-control-plane.md)) where you control the package features.
+Caddy issues and renews TLS automatically for each listed hostname via Let's Encrypt. The wildcard `*.invisibledb.app` points DNS-only (grey cloud) at the VPS; the apex invisibledb.app points to Vercel where the control plane lives. Caddy never needs to know how many customers there are — it reads the `sites/` directory.
+
+### Port registry — and why Docker made it boring
+
+The old architecture needed a host-port registry (8091–8099 for PocketBase, 8100+ for apps) because every process shared the host network. Docker's `idb-net` bridge makes host-port collision a non-issue:
+
+| What | Where | Port |
+| --- | --- | --- |
+| Caddy | host :80/:443 (published) | 80, 443 |
+| Auth gateway | idb-net only (exposed, not published) | 8080 |
+| Customer containers | idb-net only, Docker DNS `idb-<slug>` | 8090 (container-internal, identical for all) |
+
+Every customer container listens on 8090 *inside its own network namespace*. Caddy routes by hostname, the gateway resolves `idb-<slug>` via Docker DNS. The control plane still keeps a slug ↔ container ↔ domain registry (provisioning state in the ProvisionRequest table), but it records hostnames, not ports — ports stopped being a resource to manage.
 
 ### Rules that keep you sane
 
-- Never bind a project binary to a public interface; loopback only.
-- One subdomain per project, always — path-based multi-tenancy (/myapp/) breaks PocketBase asset and API URLs.
-- Record port ↔ project ↔ subdomain in one place; the control plane owns this registry.
+- Never publish a customer container's port to the host; Caddy and the gateway are the only public doors.
+- One hostname per customer, always — `<slug>.invisibledb.app` — path-based multi-tenancy (/slug/) breaks PocketBase asset and API URLs the same way it always did.
+- The gateway, not Caddy, owns auth: Caddy terminates TLS and routes; the gateway validates the key and swaps the superuser token. Mixing the two is how leaks happen.
 
-## Measured: the [P] proxy works (2026-10-06)
+## Measured: the full chain works (2026-10-07)
 
-Full chain proven live: `https://vibecode.momsoilchange.com/api/health` → Cloudflare → Apache → `.htaccess` mod_rewrite `[P]` → `127.0.0.1:18001` → PocketBase v0.36.5 → HTTP 200 `{"message":"API is healthy."}`. Verified from two independent external networks.
+Live verification on vps3695717.trouble-free.net (66.23.224.55), from two independent external networks:
 
-The proxy rules coexist cleanly with existing hotlink-protection and PHP-handler rules — append-only, scoped to `/api/*` and `/_/*`. The `[P]` flag is allowed in `.htaccess` on OrangeHost shared hosting. This was the highest-risk assumption in the architecture; it is now retired.
+- `https://<slug>.invisibledb.app/api/health` with `Authorization: Bearer <valid-key>` → Caddy (443, auto-TLS) → gateway (key check passes) → customer PocketBase container → **HTTP 200**
+- Same request with a bad key → **401** from the gateway — nothing proxied, PocketBase never touched
+- TLS: certificate issued automatically on first request, no manual step; wildcard DNS (grey cloud) to the VPS confirmed
+
+This was the highest-risk assumption in the ingress design — that Caddy + a 200-line gateway could replace the entire shared-hosting Apache proxy stack with better isolation. It is now retired: valid key → 200, bad key → 401, TLS automatic.

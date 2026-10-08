@@ -1,29 +1,41 @@
-## Reference kit and preflight checklist
+## Reference kit: the VPS substrate
 
-### Canonical layout (per project, any tier)
+### Canonical layout on the box (`/srv/idb`)
 
 ```
-~/apps/<project>/  pocketbase (+ .prev)  pb_data/ (data.db + storage/)
-  start.sh  watchdog.sh  deploy.sh  litestream.yml  logs/app.log
-~/public_html/<project-subdomain>/
-  .htaccess           # proxy to 127.0.0.1:<port>
-  index.html          # frontend build output (if any)
+compose.yml            # caddy + gateway services (customer containers join idb-net at provision time)
+.env                   # BASE_DOMAIN, ACME_EMAIL, CONTROL_PLANE_URL, VPS_API_SECRET (root-readable only)
+caddy/Caddyfile        # edge: *.invisibledb.app wildcard + per-customer routes written by bin/provision
+caddy/sites/           # per-customer route files: <slug>.caddy
+gateway/               # auth gateway: Bearer <apiKey> -> PocketBase token swap, Host-header routing
+bin/provision          # provision <slug> <email>: volume + container + superuser + API key + Caddy route
+bin/deprovision        # final backup, then remove container + volume + route
+bin/backup             # nightly: online sqlite3 .backup per volume, retention, off-box rsync
+bin/poll-provision     # host cron every 2 min: claim ProvisionRequest rows, run provision/deprovision, report back
+keys/<slug>.key        # per-customer API keys, 0600 — shown to the customer once, never logged
+backups/               # nightly SQLite dumps (convenience copies; off-box rsync is the archive)
 ```
 
-### Preflight — run before building on any new host
+### Preflight — run before trusting any new VPS
 
-- SSH (jailed) works; uname -m, free disk, cron minimum interval recorded
-- A test binary survives 24h detached — or Passenger fallback confirmed
-- mod_proxy [P] flag works from .htaccess — or Node selector path confirmed
-- AutoSSL issues for a fresh test subdomain; time-to-cert measured
-- Outbound HTTPS to R2/B2 works; Litestream test replication restored successfully
-- UAPI token created and a subdomain created/deleted via API
-- (Reseller) WHM API token works; test account created and removed
-- DB version recorded; vector path chosen (sqlite-vec) + 100-vector test timed
-- LVE limits read and recorded — the numbers you will budget against
+- Docker installed and the daemon survives a reboot; `docker compose` available
+- `/srv/idb` populated from the repo; all of `bin/` executable
+- `.env` complete: `BASE_DOMAIN`, `ACME_EMAIL`, `CONTROL_PLANE_URL`, `VPS_API_SECRET` (generated with `openssl rand -hex 32`, also set in Vercel env)
+- `docker compose up -d --build` → caddy + gateway Up; pocketbase image builds clean
+- Wildcard DNS `*.BASE_DOMAIN` → box IP, DNS-only (no proxying that hides the origin)
+- Caddy issues a cert for a test subdomain on first request; time-to-cert measured
+- `bin/provision test <email>` succeeds end to end: container up, route live, `/api/health` 200 with the key, 401 without it; then `bin/deprovision test`
+- Poller cron installed (`*/2 * * * *` → `bin/poll-provision`); a test `ProvisionRequest` row is claimed and reported within one cycle
+- `bin/backup` runs; a restore from the dump onto a fresh volume is verified, not assumed
+- Stripe webhook endpoint `/api/billing/webhook` reachable from the control plane with signature verification (the box never sees Stripe)
+- UFW (or equivalent): 22/80/443 only; unattended-upgrades + fail2ban on
+
+### The money flow (canonical)
+
+Stripe Checkout → `checkout.session.completed` → `Subscription` row + `ProvisionRequest` row (Neon) → VPS poller claims it (2 min) → `bin/provision` → customer gets endpoint + API key. Cancel → `customer.subscription.deleted` → deprovision queue → `bin/deprovision`.
 
 ### Assumptions this blueprint makes (verify, do not trust)
 
-PocketBase idle memory (30–60 MB), Micro practical ceiling (5–8 light projects), and AutoSSL behavior are planning estimates, not measurements of your account — Week 1 replaces them with observed numbers. OrangeHost plan details as of October 5, 2026. Re-confirm pricing before any public claim.
+PocketBase idle memory (30–60 MB per container), the $3 slice's practical ceiling (~10–15 light customers before RAM binds), the 2-minute poller interval, and nightly backup cadence are planning estimates — the first month of real tenants replaces them with observed numbers. Stripe objects as of 2026-10-08: product `prod_VOxrNECaDbKlsF`, price `price_1UO9wRADolYVlmkJHgCt9lcR` ($6.99/mo), coupon `FIRST_MONTH_1` ($5.99 off, once). Re-confirm before any public claim.
 
-BaaS Blueprint — Tyreese Burton, October 2026. Reference: OrangeHost Micro (momsoilchange.com).
+BaaS Blueprint — Tyreese Burton, October 2026. Reference: InterServer VPS vps3695717 (66.23.224.55), Ubuntu 24.04, Docker.
