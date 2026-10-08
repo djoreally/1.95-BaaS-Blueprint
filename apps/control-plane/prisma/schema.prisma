@@ -51,15 +51,12 @@ model Project {
   id           String    @id @default(cuid())
   userId       String
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // Provider: "vps" (InvisibleDB managed) or "cpanel" (BYOH).
-  // VPS projects have connectionId=null; cPanel projects have a HostingConnection.
-  provider     String    @default("vps")
   connectionId String?
   connection   HostingConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   name         String
   domain       String
   fqdn         String
-  port         Int?
+  port         Int
   dbName       String?
   dbUser       String?
   status       String    @default("provisioning")
