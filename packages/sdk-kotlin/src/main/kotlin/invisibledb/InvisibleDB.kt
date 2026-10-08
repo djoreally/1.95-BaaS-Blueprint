@@ -1,127 +1,212 @@
 package invisibledb
 
-import java.net.HttpURLConnection
-import java.net.URL
-import org.json.JSONObject
-import org.json.JSONArray
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.*
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.math.pow
 
-/**
- * InvisibleDB Kotlin SDK for Android.
- *
- * Two auth modes:
- * - API key (server-side only): full instance access. NEVER ship in app bundles.
- * - User auth (client-safe): authenticate as a PocketBase user, scoped by collection rules.
- *
- * ```kotlin
- * // Server-side (e.g., in your backend)
- * val db = InvisibleDB(baseUrl = "https://acme.invisibledb.app", apiKey = System.getenv("INVISIBLED_KEY"))
- *
- * // Client-side (in your Android app)
- * val db = InvisibleDB(baseUrl = "https://acme.invisibledb.app")
- * db.authWithPassword("users", "user@example.com", "password")
- * ```
- */
+interface TokenStore {
+    suspend fun get(): String?
+    suspend fun set(token: String)
+    suspend fun clear()
+}
+
+class MemoryTokenStore : TokenStore {
+    private var token: String? = null
+    override suspend fun get() = token
+    override suspend fun set(token: String) { this.token = token }
+    override suspend fun clear() { token = null }
+}
+
 class InvisibleDBError(val status: Int, message: String) : Exception("InvisibleDB $status: $message")
+
+data class ListOptions(
+    val page: Int? = null,
+    val perPage: Int? = null,
+    val sort: String? = null,
+    val filter: String? = null,
+    val expand: String? = null,
+)
+
+data class UploadPart(val field: String, val file: File, val contentType: String)
 
 class InvisibleDB(
     baseUrl: String,
-    private val apiKey: String? = null
+    private val apiKey: String? = null,
+    private val tokenStore: TokenStore = MemoryTokenStore(),
+    timeoutSeconds: Long = 15,
+    private val retries: Int = 2,
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(timeoutSeconds, TimeUnit.SECONDS)
+        .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
+        .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
+        .build(),
 ) {
-    val baseUrl: String = baseUrl.trimEnd('/')
-    private var userToken: String? = null
+    val baseUrl = baseUrl.trimEnd('/')
+    private val json = Json { ignoreUnknownKeys = true }
+    @Volatile private var userToken: String? = null
 
-    private fun authHeader(): String {
-        // User token takes precedence (client-safe). API key is server-side fallback.
-        userToken?.let { return "Bearer $it" }
-        apiKey?.let { return "Bearer $it" }
-        throw InvisibleDBError(401, "no credentials: provide apiKey or call authWithPassword first")
+    suspend fun restoreSession(): Boolean {
+        userToken = tokenStore.get()
+        return isAuthenticated()
     }
 
-    @Suppress("UNCHECKED_CAST")
-    internal fun <T> req(method: String, path: String, body: Map<String, Any?>? = null, query: Map<String, String>? = null): T {
-        var urlStr = "$baseUrl$path"
-        if (!query.isNullOrEmpty()) {
-            val qs = query.entries.joinToString("&") { "${it.key}=${it.value}" }
-            urlStr += "?$qs"
-        }
-        val conn = URL(urlStr).openConnection() as HttpURLConnection
-        conn.requestMethod = method
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("Authorization", authHeader())
-        if (body != null) {
-            conn.doOutput = true
-            conn.outputStream.use { it.write(JSONObject(body as Map<String, *>).toString().toByteArray()) }
-        }
-        val code = conn.responseCode
-        if (code == 401) throw InvisibleDBError(401, "invalid credentials")
-        if (code < 200 || code >= 300) {
-            val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(300) } catch (_: Exception) { null }
-            throw InvisibleDBError(code, errBody ?: "request failed")
-        }
-        if (code == 204) return Unit as T
-        val respBody = conn.inputStream.bufferedReader().readText()
-        if (respBody.isEmpty()) return Unit as T
-        return JSONObject(respBody) as T
+    fun isAuthenticated() = userToken != null || apiKey != null
+
+    private suspend fun credential(): String {
+        userToken?.let { return it }
+        tokenStore.get()?.let { userToken = it; return it }
+        apiKey?.let { return it }
+        throw InvisibleDBError(401, "no credentials; authenticate a user or provide a server-side API key")
     }
 
-    /**
-     * Authenticate as a PocketBase user (client-safe).
-     * The token is scoped by the collection's API rules.
-     */
-    fun authWithPassword(collection: String, identity: String, password: String): Map<String, Any> {
-        val res: Map<String, Any> = req("POST", "/api/collections/$collection/auth-with-password",
-            body = mapOf("identity" to identity, "password" to password))
-        @Suppress("UNCHECKED_CAST")
-        userToken = res["token"] as? String
+    private suspend fun execute(request: Request): Response = suspendCancellableCoroutine { cont ->
+        val call = client.newCall(request)
+        cont.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) { if (cont.isActive) cont.resumeWithException(e) }
+            override fun onResponse(call: Call, response: Response) { if (cont.isActive) cont.resume(response) else response.close() }
+        })
+    }
+
+    internal suspend fun request(
+        method: String,
+        path: String,
+        body: RequestBody? = null,
+        query: Map<String, String> = emptyMap(),
+    ): JsonElement {
+        val urlBuilder = (baseUrl + path).toHttpUrl().newBuilder()
+        query.forEach { (k, v) -> urlBuilder.addQueryParameter(k, v) }
+        var last: Throwable? = null
+        for (attempt in 0..retries) {
+            val request = Request.Builder()
+                .url(urlBuilder.build())
+                .header("Authorization", "Bearer ${credential()}")
+                .method(method, if (method == "GET" || method == "DELETE") null else body ?: ByteArray(0).toRequestBody())
+                .build()
+            try {
+                execute(request).use { response ->
+                    if (response.code == 401) throw InvisibleDBError(401, "invalid credentials")
+                    if (!response.isSuccessful) {
+                        val msg = response.body?.string()?.take(300) ?: "request failed"
+                        if ((response.code == 429 || response.code >= 500) && attempt < retries) {
+                            delay((250.0 * 2.0.pow(attempt)).toLong())
+                            return@use
+                        }
+                        throw InvisibleDBError(response.code, msg)
+                    }
+                    val text = response.body?.string().orEmpty()
+                    return if (text.isBlank()) JsonNull else json.parseToJsonElement(text)
+                }
+            } catch (e: Throwable) {
+                last = e
+                if (e is InvisibleDBError) throw e
+                if (attempt >= retries) throw e
+                delay((250.0 * 2.0.pow(attempt)).toLong())
+            }
+        }
+        throw last ?: IllegalStateException("request failed")
+    }
+
+    suspend fun authWithPassword(collection: String, identity: String, password: String): JsonObject {
+        val payload = buildJsonObject { put("identity", identity); put("password", password) }
+        val result = request(
+            "POST",
+            "/api/collections/$collection/auth-with-password",
+            payload.toString().toRequestBody("application/json".toMediaType()),
+        ).jsonObject
+        val token = result["token"]?.jsonPrimitive?.content
             ?: throw InvisibleDBError(500, "auth response missing token")
-        return res
+        userToken = token
+        tokenStore.set(token)
+        return result
     }
 
-    /** Clear the user session. */
-    fun logout() { userToken = null }
+    suspend fun logout() { userToken = null; tokenStore.clear() }
 
-    /** True if authenticated via user token or API key. */
-    fun isAuthenticated(): Boolean = userToken != null || apiKey != null
+    fun collection(name: String) = Collection(this, name)
 
-    fun collection(name: String): Collection = Collection(this, name)
-
-    /** File URL for a record's file field. */
-    fun fileUrl(collection: String, recordId: String, filename: String): String =
+    fun fileUrl(collection: String, recordId: String, filename: String) =
         "$baseUrl/api/files/$collection/$recordId/$filename"
 
-    /** Semantic vector search. */
-    fun vectorQuery(collection: String, embedding: List<Double>, limit: Int = 10): List<Map<String, Any>> {
-        val res: Map<String, Any> = req("POST", "/api/vector/query",
-            body = mapOf("collection" to collection, "embedding" to embedding, "limit" to limit))
-        @Suppress("UNCHECKED_CAST")
-        return (res["results"] as? List<Map<String, Any>>) ?: emptyList()
+    suspend fun vectorQuery(collection: String, embedding: List<Double>, limit: Int = 10): JsonArray {
+        val payload = buildJsonObject {
+            put("collection", collection)
+            put("embedding", JsonArray(embedding.map(::JsonPrimitive)))
+            put("limit", limit)
+        }
+        return request("POST", "/api/vector/query", payload.toString().toRequestBody("application/json".toMediaType()))
+            .jsonObject["results"]?.jsonArray ?: JsonArray(emptyList())
     }
 
-    /** Liveness probe. */
-    fun health(): Map<String, Any> = req("GET", "/api/health")
+    suspend fun health() = request("GET", "/api/health").jsonObject
+
+    suspend fun upload(method: String, path: String, fields: JsonObject, files: List<UploadPart>): JsonElement {
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+        fields.forEach { (k, v) -> multipart.addFormDataPart(k, if (v is JsonPrimitive && v.isString) v.content else v.toString()) }
+        files.forEach { part ->
+            multipart.addFormDataPart(part.field, part.file.name, part.file.asRequestBody(part.contentType.toMediaType()))
+        }
+        return request(method, path, multipart.build())
+    }
+
+    suspend fun subscribe(collection: String, onEvent: (JsonObject) -> Unit): Subscription {
+        val handshake = request("POST", "/api/realtime", ByteArray(0).toRequestBody()).jsonObject
+        val clientId = handshake["clientId"]?.jsonPrimitive?.content
+            ?: throw InvisibleDBError(500, "realtime handshake missing clientId")
+        val subPayload = buildJsonObject {
+            put("clientId", clientId)
+            put("subscriptions", JsonArray(listOf(JsonPrimitive(collection))))
+        }
+        request("POST", "/api/realtime", subPayload.toString().toRequestBody("application/json".toMediaType()))
+        val req = Request.Builder()
+            .url("$baseUrl/api/realtime?clientId=$clientId")
+            .header("Authorization", "Bearer ${credential()}")
+            .build()
+        val source = EventSources.createFactory(client).newEventSource(req, object : EventSourceListener() {
+            override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+                runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull()?.let(onEvent)
+            }
+        })
+        return Subscription(source)
+    }
+}
+
+class Subscription(private val source: EventSource) : AutoCloseable {
+    override fun close() { source.cancel() }
 }
 
 class Collection(private val db: InvisibleDB, val name: String) {
-    private val path = "/api/collections/$name/records"
+    private val path get() = "/api/collections/$name/records"
 
-    fun getList(page: Int? = null, perPage: Int? = null, sort: String? = null,
-                filter: String? = null, expand: String? = null): Map<String, Any> {
-        val q = mutableMapOf<String, String>()
-        page?.let { q["page"] = it.toString() }
-        perPage?.let { q["perPage"] = it.toString() }
-        sort?.let { q["sort"] = it }
-        filter?.let { q["filter"] = it }
-        expand?.let { q["expand"] = it }
-        return db.req("GET", path, query = q)
+    suspend fun getList(options: ListOptions = ListOptions()): JsonObject {
+        val q = buildMap {
+            options.page?.let { put("page", it.toString()) }
+            options.perPage?.let { put("perPage", it.toString()) }
+            options.sort?.let { put("sort", it) }
+            options.filter?.let { put("filter", it) }
+            options.expand?.let { put("expand", it) }
+        }
+        return db.request("GET", path, query = q).jsonObject
     }
 
-    fun getOne(id: String): Map<String, Any> = db.req("GET", "$path/$id")
-
-    fun create(data: Map<String, Any?>): Map<String, Any> =
-        db.req("POST", path, body = data)
-
-    fun update(id: String, data: Map<String, Any?>): Map<String, Any> =
-        db.req("PATCH", "$path/$id", body = data)
-
-    fun delete(id: String) { db.req<Unit>("DELETE", "$path/$id") }
+    suspend fun getOne(id: String) = db.request("GET", "$path/$id").jsonObject
+    suspend fun create(data: JsonObject) = db.request("POST", path, data.toString().toRequestBody("application/json".toMediaType())).jsonObject
+    suspend fun update(id: String, data: JsonObject) = db.request("PATCH", "$path/$id", data.toString().toRequestBody("application/json".toMediaType())).jsonObject
+    suspend fun delete(id: String) { db.request("DELETE", "$path/$id") }
+    suspend fun createWithFiles(data: JsonObject, files: List<UploadPart>) = db.upload("POST", path, data, files).jsonObject
+    suspend fun updateWithFiles(id: String, data: JsonObject, files: List<UploadPart>) = db.upload("PATCH", "$path/$id", data, files).jsonObject
+    suspend fun subscribe(onEvent: (JsonObject) -> Unit) = db.subscribe(name, onEvent)
 }
