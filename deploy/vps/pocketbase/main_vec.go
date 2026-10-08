@@ -3,6 +3,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"regexp"
 
 	sqlitevec "github.com/asg017/sqlite-vec-go-bindings/cgo"
+	"github.com/mattn/go-sqlite3"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -18,6 +20,28 @@ import (
 )
 
 var safeCollection = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// PocketBase normally uses its pure-Go SQLite driver. sqlite-vec's CGO binding
+// must be attached to the actual connections PocketBase opens, so register a
+// dedicated driver and select it through PocketBase's DBConnect hook.
+func init() {
+	sqlitevec.Auto()
+	sql.Register("idb_sqlite3", &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			_, err := conn.Exec(`
+				PRAGMA busy_timeout = 10000;
+				PRAGMA journal_mode = WAL;
+				PRAGMA journal_size_limit = 200000000;
+				PRAGMA synchronous = NORMAL;
+				PRAGMA foreign_keys = ON;
+				PRAGMA temp_store = MEMORY;
+				PRAGMA cache_size = -32000;
+			`, nil)
+			return err
+		},
+	})
+	dbx.BuilderFuncMap["idb_sqlite3"] = dbx.BuilderFuncMap["sqlite3"]
+}
 
 type vectorUpsertRequest struct {
 	Collection string    `json:"collection"`
@@ -135,7 +159,6 @@ func vectorJSON(values []float64) (string, error) {
 
 func bindVectorRoutes(app *pocketbase.PocketBase) {
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		// Server-key lane only: maintain vector rows for existing PocketBase records.
 		se.Router.POST("/api/vector/upsert", func(e *core.RequestEvent) error {
 			body := &vectorUpsertRequest{}
 			if err := e.BindBody(body); err != nil {
@@ -185,9 +208,8 @@ func bindVectorRoutes(app *pocketbase.PocketBase) {
 			return e.JSON(http.StatusOK, map[string]bool{"ok": true})
 		}).Bind(apis.RequireSuperuserAuth())
 
-		// Query may be called by server-key, end-user token, or guest. Hydrated
-		// PocketBase records are filtered through the collection ViewRule before
-		// being returned, so vector search cannot bypass normal record security.
+		// Query may be called with a server key, an end-user token, or no token.
+		// Results are rechecked through the target collection's ViewRule.
 		se.Router.POST("/api/vector/query", func(e *core.RequestEvent) error {
 			body := &vectorQueryRequest{}
 			if err := e.BindBody(body); err != nil {
@@ -211,7 +233,6 @@ func bindVectorRoutes(app *pocketbase.PocketBase) {
 			if err != nil {
 				return e.BadRequestError("invalid embedding", err)
 			}
-			// Fetch extra neighbors because access rules may filter some hits.
 			candidateLimit := limit * 4
 			if candidateLimit > 200 {
 				candidateLimit = 200
@@ -267,11 +288,11 @@ func bindVectorRoutes(app *pocketbase.PocketBase) {
 }
 
 func main() {
-	// Register sqlite-vec for every SQLite connection opened by this process.
-	sqlitevec.Auto()
-	defer sqlitevec.Cancel()
-
-	app := pocketbase.New()
+	app := pocketbase.NewWithConfig(pocketbase.Config{
+		DBConnect: func(dbPath string) (*dbx.DB, error) {
+			return dbx.Open("idb_sqlite3", dbPath)
+		},
+	})
 	bindVectorRoutes(app)
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
