@@ -65,7 +65,10 @@ const siteJsonLd = {
   ],
 };
 
-function SiteNav() {
+import { currentUser } from '../lib/auth';
+
+async function SiteNav() {
+  const user = await currentUser().catch(() => null);
   return (
     <header className="m-nav">
       <div className="m-nav-inner">
@@ -80,12 +83,25 @@ function SiteNav() {
           <a href="/tools">Tools</a>
         </nav>
         <div className="m-nav-cta">
-          <a className="m-signin" href="/login">
-            Sign in
-          </a>
-          <a className="m-btn small" href="/signup">
-            Get started
-          </a>
+          {user ? (
+            <>
+              <a className="m-signin" href="/projects">
+                Dashboard
+              </a>
+              <a className="m-btn small" href="/logout">
+                Sign out
+              </a>
+            </>
+          ) : (
+            <>
+              <a className="m-signin" href="/login">
+                Sign in
+              </a>
+              <a className="m-btn small" href="/signup">
+                Get started
+              </a>
+            </>
+          )}
         </div>
       </div>
     </header>
