@@ -92,7 +92,12 @@ const faqJsonLd = {
   ],
 };
 
-export default function PricingPage() {
+import { currentUser } from '../../lib/auth';
+
+export default async function PricingPage() {
+  const user = await currentUser().catch(() => null);
+  // Logged-in users go straight to Stripe checkout; visitors go to signup.
+  const ctaHref = user ? '/api/billing/checkout' : '/signup';
   return (
     <div className="m-page">
       <JsonLd data={productJsonLd} />
@@ -128,7 +133,7 @@ export default function PricingPage() {
               <li>Your data as SQLite files — take them anywhere</li>
               <li>No bandwidth meters, no per-seat premiums, no surprise bills</li>
             </ul>
-            <a className="m-btn" href="/signup">
+            <a className="m-btn" href={ctaHref}>
               Get started
             </a>
           </div>
@@ -294,7 +299,7 @@ export default function PricingPage() {
       <section className="m-cta-band">
         <h2>Your backend, handled.</h2>
         <p>First month is $1. Your data stays yours. What&apos;s stopping you?</p>
-        <a className="m-btn" href="/signup">
+        <a className="m-btn" href={ctaHref}>
           Get started with InvisibleDB
         </a>
       </section>
