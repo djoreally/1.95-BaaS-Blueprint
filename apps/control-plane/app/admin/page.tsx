@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { prisma } from '../../lib/db';
-import { requireAdmin, clearSessionCookie } from '../../lib/auth';
+import { currentUser, clearSession } from '../../lib/auth';
 
 export const metadata = { title: 'Admin — InvisibleDB' };
 export const dynamic = 'force-dynamic';
@@ -17,26 +17,28 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export default async function AdminDashboard() {
   let admin;
   try {
-    admin = await requireAdmin();
+    const me = await currentUser().catch(() => null);
+    admin = me?.role === 'admin' ? me : null;
   } catch {
     redirect('/admin/login');
   }
+  if (!admin) redirect('/admin/login');
 
   const [subCount, activeSubs, reqPending, reqFailed, userCount, projCount] = await Promise.all([
-    prisma.subscription.count(),
-    prisma.subscription.count({ where: { status: 'active' } }),
+    prisma.billingSubscription.count(),
+    prisma.billingSubscription.count({ where: { entitlementActive: true } }),
     prisma.provisionRequest.count({ where: { status: { in: ['pending', 'claimed'] } } }),
     prisma.provisionRequest.count({ where: { status: 'failed' } }),
     prisma.user.count(),
     prisma.project.count(),
   ]);
 
-  const recentSubs = await prisma.subscription.findMany({ orderBy: { createdAt: 'desc' }, take: 10 });
+  const recentSubs = await prisma.billingSubscription.findMany({ orderBy: { createdAt: 'desc' }, take: 10, include: { user: { select: { email: true } } } });
   const recentReqs = await prisma.provisionRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 10 });
 
   async function logout() {
     'use server';
-    await clearSessionCookie();
+    await clearSession();
     redirect('/admin/login');
   }
 
@@ -60,7 +62,7 @@ export default async function AdminDashboard() {
         <h3>Latest subscriptions</h3>
         {recentSubs.length === 0 && <p style={{ color: 'var(--muted)' }}>None yet.</p>}
         {recentSubs.map((s) => (
-          <Row key={s.id} label={`${s.email} → ${s.slug ?? 'provisioning…'}`} value={s.status} />
+          <Row key={s.id} label={`${s.user.email} → ${s.stripeSubscriptionId ?? 'provisioning…'}`} value={s.status} />
         ))}
       </div>
 

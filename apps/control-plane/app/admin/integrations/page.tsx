@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { prisma } from '../../../lib/db';
-import { requireAdmin } from '../../../lib/auth';
+import { currentUser } from '../../../lib/auth';
 
 export const metadata = { title: 'Integrations — InvisibleDB Admin' };
 export const dynamic = 'force-dynamic';
@@ -38,11 +38,8 @@ async function checkVps(): Promise<Check> {
 }
 
 export default async function IntegrationsPage() {
-  try {
-    await requireAdmin();
-  } catch {
-    redirect('/admin/login');
-  }
+  const me = await currentUser().catch(() => null);
+  if (me?.role !== 'admin') redirect('/admin/login');
 
   const checks: Check[] = [
     {

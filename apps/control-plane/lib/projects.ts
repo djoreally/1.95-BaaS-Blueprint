@@ -2,13 +2,7 @@
  * Project store + provisioning job runner — Prisma (Neon Postgres) backed.
  *
  * Provisioning calls the REAL `createProject()` from @baas-195/adapter-cpanel.
- * For the live feed, the adapter's injectable `fetchImpl` is wrapped: every
- * raw UAPI call flips its step to running → done/failed as it completes, so
- * the UI renders each adapter step the moment it lands.
- *
- * Durable project records live in Postgres. Actively-provisioning jobs also
- * live in a server-memory map so the 2s poll feed sees step transitions
- * instantly; the DB is updated as steps complete and on finish.
+ * Durable project ownership is established before any hosting mutation begins.
  */
 import { randomBytes } from 'crypto';
 import {
@@ -19,7 +13,7 @@ import {
 } from '@baas-195/adapter-cpanel';
 import type { ProjectProvisioned, UapiConfig } from '@baas-195/adapter-cpanel';
 import { prisma } from './db';
-import { getConnection } from './connection';
+import { getConnection, type HostingConnection } from './connection';
 import { insecureFetch } from './tls';
 
 export type StepState = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
@@ -49,7 +43,6 @@ export interface ProjectJob {
   createdAt: string;
 }
 
-/** Live jobs only — the 2s feed reads here for instant step transitions. */
 const activeJobs = new Map<string, ProjectJob>();
 
 const STEP_DEFS: Array<{ id: string; label: string }> = [
@@ -81,7 +74,6 @@ function markStep(job: ProjectJob, id: string, state: StepState, detail?: string
   const now = new Date().toISOString();
   if (state === 'running' && !s.startedAt) s.startedAt = now;
   if (state === 'done' || state === 'failed' || state === 'skipped') s.endedAt = now;
-  // Persist step history so a refresh mid-provisioning doesn't lose the feed.
   void persistJob(job).catch(() => {});
 }
 
@@ -99,7 +91,6 @@ async function persistJob(job: ProjectJob): Promise<void> {
   }).catch(() => {});
 }
 
-/** fetchImpl wrapper: reports every raw UAPI call as a provisioning step. */
 function trackingFetch(job: ProjectJob): typeof fetch {
   const base = insecureFetch as unknown as typeof fetch;
   return (async (input: string | URL | Request, init?: RequestInit) => {
@@ -112,8 +103,6 @@ function trackingFetch(job: ProjectJob): typeof fetch {
       if (stepId) markStep(job, stepId, 'done');
       return res;
     } catch (e) {
-      // Transport failure — the adapter retries with backoff; keep the step
-      // in running so the feed shows "retrying" rather than flapping.
       if (stepId) {
         const s = job.steps.find((x) => x.id === stepId);
         if (s && s.state !== 'running') markStep(job, stepId, 'running', 'retrying…');
@@ -177,7 +166,6 @@ function rowToJob(row: {
     status: row.status as ProjectJob['status'],
     steps,
     createdAt: row.createdAt.toISOString(),
-    // The seeded live demo keeps its badge + explainer.
     ...(row.id === 'demo'
       ? {
           seeded: true,
@@ -195,7 +183,6 @@ export async function listJobs(): Promise<ProjectJob[]> {
     orderBy: { createdAt: 'desc' },
   });
   const byId = new Map(rows.map((r) => [r.id, rowToJob(r)]));
-  // Live jobs win — their step state is fresher than the last persist.
   for (const j of activeJobs.values()) byId.set(j.id, j);
   return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -207,17 +194,16 @@ export async function getJob(id: string): Promise<ProjectJob | undefined> {
   return row ? rowToJob(row) : undefined;
 }
 
-/** Start provisioning in the background; returns immediately with the job. */
-export async function startProvisioning(name: string, domain: string): Promise<ProjectJob> {
-  const conn = await getConnection();
-  if (!conn) throw new Error('No hosting connection. Connect hosting first.');
-
-  const userId = await defaultUserId();
-  const connection = await prisma.hostingConnection.findFirst({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-  });
-
+/**
+ * Provision only after the caller has authenticated the owner and selected the
+ * exact hosting connection. The provisioner never resolves tenancy itself.
+ */
+export async function startProvisioningFor(
+  userId: string,
+  connection: HostingConnection,
+  name: string,
+  domain: string,
+): Promise<ProjectJob> {
   const id = `${name}-${Date.now().toString(36)}`;
   const port = await allocatePort();
   const job: ProjectJob = {
@@ -230,21 +216,35 @@ export async function startProvisioning(name: string, domain: string): Promise<P
     steps: STEP_DEFS.map((d) => ({ ...d, state: 'pending' as StepState })),
     createdAt: new Date().toISOString(),
   };
+
   await prisma.project.create({
     data: {
-      id, userId, connectionId: connection?.id ?? null,
-      name, domain, fqdn: job.fqdn, port,
+      id,
+      userId,
+      connectionId: connection.id,
+      name,
+      domain,
+      fqdn: job.fqdn,
+      port,
       status: 'provisioning',
       steps: job.steps as unknown as object,
     },
   });
+
   activeJobs.set(id, job);
-  // Fire and forget — the feed polls GET /api/projects/[id].
-  void runProvisioning(id, conn);
+  void runProvisioning(id, connection);
   return job;
 }
 
-async function runProvisioning(id: string, conn: NonNullable<Awaited<ReturnType<typeof getConnection>>>): Promise<void> {
+/** Backward-compatible platform-owner entry point used only by legacy/demo code. */
+export async function startProvisioning(name: string, domain: string): Promise<ProjectJob> {
+  const conn = await getConnection();
+  if (!conn) throw new Error('No hosting connection. Connect hosting first.');
+  const userId = await defaultUserId();
+  return startProvisioningFor(userId, conn, name, domain);
+}
+
+async function runProvisioning(id: string, conn: HostingConnection): Promise<void> {
   const job = activeJobs.get(id);
   if (!job) return;
   const dbPassword = randomBytes(18).toString('base64').replace(/[^A-Za-z0-9]/g, 'x');
@@ -266,8 +266,6 @@ async function runProvisioning(id: string, conn: NonNullable<Awaited<ReturnType<
       sslTimeoutMs: 60_000,
     });
 
-    // Proxy rules are not part of createProject — land them as the final
-    // step with the supervisor's .htaccess template, via the real adapter.
     try {
       const client = new UapiClient({ ...cfg, fetchImpl: trackingFetch(job) });
       await client.writeFile(provisioned.docRoot, '.htaccess', htaccessFor(provisioned.fqdn, provisioned.port));
@@ -292,12 +290,12 @@ async function runProvisioning(id: string, conn: NonNullable<Awaited<ReturnType<
   }
 }
 
-/** Tear down via the real adapter, then drop the project from the store. */
-export async function teardownProject(id: string): Promise<{ removed: string[]; errors: Array<{ step: string; error: string }> }> {
+export async function teardownProjectWithConnection(
+  id: string,
+  conn: HostingConnection,
+): Promise<{ removed: string[]; errors: Array<{ step: string; error: string }> }> {
   const job = await getJob(id);
   if (!job) throw new Error('unknown project');
-  const conn = await getConnection();
-  if (!conn) throw new Error('No hosting connection.');
   const report = await deleteProject(
     { host: conn.host, user: conn.user, apiToken: conn.apiToken, fetchImpl: insecureFetch as unknown as typeof fetch },
     { name: job.name, domain: job.domain },
@@ -307,7 +305,13 @@ export async function teardownProject(id: string): Promise<{ removed: string[]; 
   return { removed: report.removed, errors: report.errors };
 }
 
-/** Seed the real demo project living on the box (vibecode → :18001). */
+/** Backward-compatible platform-owner teardown entry point. */
+export async function teardownProject(id: string): Promise<{ removed: string[]; errors: Array<{ step: string; error: string }> }> {
+  const conn = await getConnection();
+  if (!conn) throw new Error('No hosting connection.');
+  return teardownProjectWithConnection(id, conn);
+}
+
 async function ensureSeeded(): Promise<void> {
   const userId = await defaultUserId();
   const existing = await prisma.project.findUnique({ where: { id: 'demo' } });

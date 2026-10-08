@@ -3,7 +3,7 @@
 // The control plane's OWN bookkeeping lives here (Neon Postgres).
 // Customer DATA stays on the customer's hosting — SQLite/MySQL files on
 // the box. This DB only remembers who you are, which hosting you
-// connected, and what you provisioned.
+// connected, what you provisioned, and hosted-plan entitlement state.
 //
 // DATABASE_URL comes from the environment (Neon). Never commit it.
 generator client {
@@ -21,24 +21,26 @@ model User {
   name         String?
   passwordHash String?
   role         String   @default("user") // "user" | "admin"
+  provisionRequests ProvisionRequest[]
   createdAt    DateTime @default(now())
 
-  connections HostingConnection[]
-  projects    Project[]
+  connections  HostingConnection[]
+  projects     Project[]
+  subscriptions BillingSubscription[]
 }
 
 model HostingConnection {
-  id               String   @id @default(cuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label            String?
-  host             String
-  username         String
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label             String?
+  host              String
+  username          String
   // cPanel API token, AES-256-GCM encrypted. NEVER plaintext.
-  apiTokenEncrypted String  @db.Text
-  mainDomain       String?
-  domains          String[] @default([])
-  createdAt        DateTime @default(now())
+  apiTokenEncrypted String   @db.Text
+  mainDomain        String?
+  domains           String[] @default([])
+  createdAt         DateTime @default(now())
 
   projects Project[]
 
@@ -67,22 +69,32 @@ model Project {
   @@index([connectionId])
 }
 
-// ---- Hosted billing (Stripe) + VPS provision queue ----
+model BillingSubscription {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?  @unique
+  stripePriceId         String?
+  status                String   @default("incomplete")
+  entitlementActive     Boolean  @default(false)
+  cancelAtPeriodEnd     Boolean  @default(false)
+  currentPeriodEnd      DateTime?
+  lastStripeEventAt     DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-model Subscription {
-  id               String   @id @default(cuid())
-  email            String   @unique
-  stripeCustomerId String   @unique
-  stripeSubId      String?  @unique
-  status           String   @default("active") // active | past_due | cancelled
-  slug             String?  @unique // <slug>.BASE_DOMAIN on the VPS
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  @@index([userId])
+  @@index([stripeCustomerId])
 }
 
+// VPS provision queue — the box polls /api/vps/requests every 2 min.
+// Written by the Stripe webhook (via lib/billing.ts queue functions).
 model ProvisionRequest {
   id        String   @id @default(cuid())
   kind      String   // "provision" | "deprovision"
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   email     String
   slug      String
   status    String   @default("pending") // pending | claimed | done | failed

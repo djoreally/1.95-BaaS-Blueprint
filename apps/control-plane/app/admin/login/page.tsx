@@ -1,12 +1,11 @@
 import { redirect } from 'next/navigation';
-import { compare } from 'bcryptjs';
 import { prisma } from '../../../lib/db';
-import { setSessionCookie, getSessionUser } from '../../../lib/auth';
+import { verifyPassword, createSession, currentUser } from '../../../lib/auth';
 
 export const metadata = { title: 'Admin login — InvisibleDB' };
 
 export default async function AdminLogin() {
-  const existing = await getSessionUser().catch(() => null);
+  const existing = await currentUser().catch(() => null);
   if (existing?.role === 'admin') redirect('/admin');
 
   async function login(formData: FormData) {
@@ -17,11 +16,11 @@ export default async function AdminLogin() {
     const ok =
       user?.role === 'admin' &&
       user.passwordHash &&
-      (await compare(password, user.passwordHash));
+      verifyPassword(password, user.passwordHash);
     if (!ok) {
       redirect('/admin/login?error=1');
     }
-    await setSessionCookie(user!.id);
+    await createSession(user!.id);
     redirect('/admin');
   }
 
