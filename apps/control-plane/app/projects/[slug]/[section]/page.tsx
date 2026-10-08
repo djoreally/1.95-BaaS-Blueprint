@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { notFound, redirect } from 'next/navigation';
 import DatabaseSectionClient from '../../../components/DatabaseSectionClient';
 import StorageManager from '../../../components/StorageManager';
+import VectorManager from '../../../components/VectorManager';
 import { currentUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/db';
 
@@ -25,6 +26,10 @@ export default async function DatabaseSection({ params }: { params: Promise<{ sl
   const endpoint = `https://${slug}.${BASE_DOMAIN}`;
   const ready = request.status === 'done';
 
+  let content = <DatabaseSectionClient slug={slug} section={section} endpoint={endpoint} />;
+  if (section === 'storage') content = <StorageManager slug={slug} />;
+  if (section === 'vector') content = <VectorManager slug={slug} />;
+
   return (
     <div>
       <a href="/projects" style={{ color: '#8f8f8f', textDecoration: 'none', fontSize: 14 }}>← Databases</a>
@@ -35,10 +40,7 @@ export default async function DatabaseSection({ params }: { params: Promise<{ sl
         </div>
         <p style={{ color: '#7f7f7f', margin: '8px 0 0' }}>InvisibleDB Cloud database · {section}</p>
       </div>
-
-      {section === 'storage'
-        ? <StorageManager slug={slug} />
-        : <DatabaseSectionClient slug={slug} section={section} endpoint={endpoint} />}
+      {content}
     </div>
   );
 }
