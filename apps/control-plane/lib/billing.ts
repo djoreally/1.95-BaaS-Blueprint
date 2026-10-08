@@ -47,8 +47,6 @@ export async function createHostedCheckout(user: { id: string; email: string; na
 
   const params: Record<string, string> = {
     mode: 'subscription',
-    ui_mode: 'hosted_page',
-    origin_context: 'web',
     success_url: `${appUrl()}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl()}/pricing?checkout=canceled`,
     client_reference_id: user.id,
