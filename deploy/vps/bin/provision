@@ -63,7 +63,7 @@ $HOST {
 	reverse_proxy gateway:8080
 }
 EOF
-docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload >/dev/null
+docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 
 echo "--- provisioned ---"
 echo "url:      https://$HOST"
