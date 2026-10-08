@@ -20,6 +20,18 @@ log "rebuilding gateway with end-user/server-key split"
 docker compose build gateway
 docker compose up -d gateway caddy
 
+start_tenant() {
+  local name="$1" image="$2" volume="$3"
+  docker run -d --name "$name" \
+    --restart unless-stopped \
+    --network idb_idb-net \
+    --memory 256m --memory-swap 256m \
+    --pids-limit 128 \
+    -v "$volume:/pb/data" \
+    "$image" \
+    serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null
+}
+
 upgrade_one() {
   local name="$1" slug="${1#idb-}" volume="${1}-data"
   log "creating safety backup for $slug"
@@ -29,20 +41,23 @@ upgrade_one() {
   docker stop "$name" >/dev/null
   docker rm "$name" >/dev/null
 
-  if ! docker run -d --name "$name" \
-      --restart unless-stopped \
-      --network idb_idb-net \
-      --memory 256m --memory-swap 256m \
-      --pids-limit 128 \
-      -v "$volume:/pb/data" \
-      "$NEW_IMAGE" \
-      serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null; then
-    log "failed to start new image for $slug; rolling back"
+  # Wait until Docker/containerd has fully released the old container state.
+  for _ in $(seq 1 10); do
+    if ! docker inspect "$name" >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  sleep 1
+
+  if ! start_tenant "$name" "$NEW_IMAGE" "$volume"; then
+    log "initial start failed for $slug; retrying once after container cleanup"
     docker rm -f "$name" >/dev/null 2>&1 || true
-    docker run -d --name "$name" --restart unless-stopped --network idb_idb-net \
-      --memory 256m --memory-swap 256m --pids-limit 128 -v "$volume:/pb/data" \
-      "$OLD_IMAGE" serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null
-    return 1
+    sleep 2
+    if ! start_tenant "$name" "$NEW_IMAGE" "$volume"; then
+      log "failed to start new image for $slug; rolling back"
+      docker rm -f "$name" >/dev/null 2>&1 || true
+      start_tenant "$name" "$OLD_IMAGE" "$volume"
+      return 1
+    fi
   fi
 
   local ok=0
@@ -52,20 +67,17 @@ upgrade_one() {
   done
 
   if [[ "$ok" != "1" ]]; then
-    log "health check failed for $slug; rolling back without touching its volume"
+    log "health check failed for $slug; new runtime logs follow"
+    docker logs --tail 100 "$name" 2>&1 || true
+    log "rolling back without touching its volume"
     docker rm -f "$name" >/dev/null 2>&1 || true
-    docker run -d --name "$name" --restart unless-stopped --network idb_idb-net \
-      --memory 256m --memory-swap 256m --pids-limit 128 -v "$volume:/pb/data" \
-      "$OLD_IMAGE" serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null
+    start_tenant "$name" "$OLD_IMAGE" "$volume"
     return 1
   fi
 
   log "$slug healthy on vec runtime"
 }
 
-# Tenant containers are named idb-<slug>. Docker Compose infrastructure uses
-# names such as idb-gateway-1 and idb-caddy-1, so exclude both the bare service
-# names and Compose's suffixed variants.
 mapfile -t tenants < <(docker ps -a --format '{{.Names}}' | grep '^idb-' | grep -v -E '^idb-(caddy|gateway)(-|$)' || true)
 for tenant in "${tenants[@]}"; do
   upgrade_one "$tenant"
