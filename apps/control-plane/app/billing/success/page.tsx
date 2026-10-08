@@ -15,8 +15,8 @@ export default async function BillingSuccessPage() {
       <h1>{active ? 'Payment confirmed' : 'Payment received'}</h1>
       {active ? (
         <>
-          <p>Your InvisibleDB hosted seat is active. You can provision your backend now.</p>
-          <a className="btn" href="/projects/new">Create your hosted project →</a>
+          <p>Your InvisibleDB hosted seat is active. Your database is being provisioned now.</p>
+          <a className="btn" href="/projects">View your databases →</a>
         </>
       ) : (
         <>
