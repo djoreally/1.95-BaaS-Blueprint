@@ -19,16 +19,19 @@ AUTH="Authorization: Bearer $VPS_API_SECRET"
 RESP="$(curl -s -m 20 -H "$AUTH" "$CONTROL_PLANE_URL/api/vps/requests")"
 
 echo "$RESP" | python3 -c "
-import json, sys, subprocess, urllib.request
+import json, os, sys, subprocess, urllib.request
 
 IDB_ROOT = '$IDB_ROOT'
 AUTH = 'Bearer $VPS_API_SECRET'
 CP = '$CONTROL_PLANE_URL'
 
-def report(rid, ok, detail=''):
+def report(rid, ok, detail='', secret=None):
+    payload = {'id': rid, 'ok': ok, 'detail': detail}
+    if secret:
+        payload['secret'] = secret
     req = urllib.request.Request(
         CP + '/api/vps/requests',
-        data=json.dumps({'id': rid, 'ok': ok, 'detail': detail}).encode(),
+        data=json.dumps(payload).encode(),
         headers={'Authorization': AUTH, 'Content-Type': 'application/json'},
         method='POST')
     urllib.request.urlopen(req, timeout=20).read()
@@ -49,7 +52,12 @@ for r in data.get('requests', []):
                                  capture_output=True, text=True, timeout=300)
         ok = out.returncode == 0
         tail = (out.stdout + out.stderr)[-500:].replace('idb_live_', 'idb_live_***')
-        report(rid, ok, tail if not ok else 'completed')
+        provision_secret = None
+        if ok and kind == 'provision':
+            key_path = os.path.join(IDB_ROOT, 'keys', slug + '.key')
+            with open(key_path, 'r', encoding='utf-8') as f:
+                provision_secret = f.read().strip()
+        report(rid, ok, tail if not ok else 'completed', provision_secret)
         print(('ok ' if ok else 'FAIL ') + kind + ' ' + slug)
     except Exception as e:
         report(rid, False, str(e)[:500])
