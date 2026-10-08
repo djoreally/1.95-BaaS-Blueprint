@@ -24,4 +24,4 @@ EXPOSE 8090
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget -q -O /dev/null http://localhost:8090/api/health || exit 1
 # The provision script appends --origins and superuser bootstrap flags.
-ENTRYPOINT ["pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb/data"]
+ENTRYPOINT ["pocketbase"]
