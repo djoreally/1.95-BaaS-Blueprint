@@ -20,7 +20,7 @@ export function billingConfigured(): boolean {
 }
 
 function appUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://baas.innovarel.dev').replace(/\/$/, '');
+  return (process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://www.invisibledb.app').replace(/\/$/, '');
 }
 
 async function stripePost(path: string, params: Record<string, string>): Promise<any> {

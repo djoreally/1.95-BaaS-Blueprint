@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import { currentUser } from '../../../../lib/auth';
 import { createHostedCheckout, hasHostedEntitlement } from '../../../../lib/billing';
 
-export async function GET() {
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'https://baas.innovarel.dev';
+export async function GET(req: Request) {
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'www.invisibledb.app';
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+  const base = `${proto}://${host}`;
   const user = await currentUser();
   if (!user) return NextResponse.redirect(new URL('/login', base));
 
