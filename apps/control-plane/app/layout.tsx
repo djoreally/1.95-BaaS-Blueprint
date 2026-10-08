@@ -207,7 +207,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className={inter.className}>
         {!isAuthenticated ? <SiteNav /> : null}
-        <main className={isAuthenticated ? undefined : 'm-wrap'}>{children}</main>
+        <main className="m-wrap">{children}</main>
         {!isAuthenticated ? <SiteFooter /> : null}
       </body>
     </html>
