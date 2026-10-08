@@ -1,0 +1,5 @@
+# Apex domain: redirect to the marketing site (control plane on Vercel).
+# Customer instances live at <slug>.invisibledb.app (provision script).
+invisibledb.app {
+        redir https://baas.innovarel.dev{uri}
+}
