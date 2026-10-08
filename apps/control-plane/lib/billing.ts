@@ -231,6 +231,8 @@ export async function applyStripeEvent(event: StripeEvent): Promise<void> {
       break;
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
+      await upsertSubscriptionObject(event, object);
+      break;
     case 'customer.subscription.deleted':
       await upsertSubscriptionObject(event, object);
       await maybeQueueDeprovision(event, object);

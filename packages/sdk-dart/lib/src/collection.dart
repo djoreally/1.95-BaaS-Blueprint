@@ -30,7 +30,7 @@ class Collection {
       _db._req<Map<String, dynamic>>('POST', _path, body: data);
 
   Future<Map<String, dynamic>> update(String id, Map<String, dynamic> data) =>
-      _db._req<Map<String, dynamic>>('POST', '$_path/$id', body: data);
+      _db._req<Map<String, dynamic>>('PATCH', '$_path/$id', body: data);
 
   Future<void> delete(String id) =>
       _db._req<void>('DELETE', '$_path/$id');

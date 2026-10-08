@@ -86,10 +86,11 @@ export class InvisibleDB {
     return new Collection<T>(this, name);
   }
 
-  /** Raw escape hatch: GET/POST/DELETE against any API path. */
+  /** Raw escape hatch: GET/POST/PATCH/DELETE against any API path. */
   api = {
     get: <T>(path: string, query?: Record<string, string>) => this.req<T>('GET', path, undefined, query),
     post: <T>(path: string, body?: unknown) => this.req<T>('POST', path, body),
+    patch: <T>(path: string, body?: unknown) => this.req<T>('PATCH', path, body),
     del: <T>(path: string) => this.req<T>('DELETE', path),
   };
 
@@ -130,7 +131,7 @@ export class Collection<T = DbRecord> {
   }
 
   update(id: string, data: Partial<T>): Promise<T> {
-    return this.db.api.post<T>(`/api/collections/${this.name}/records/${id}`, data);
+    return this.db.api.patch<T>(`/api/collections/${this.name}/records/${id}`, data);
   }
 
   delete(id: string): Promise<void> {

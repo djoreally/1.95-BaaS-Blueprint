@@ -58,6 +58,9 @@ class InvisibleDB {
       res = await _client.get(uri, headers: _headers);
     } else if (method == 'DELETE') {
       res = await _client.delete(uri, headers: _headers);
+    } else if (method == 'PATCH') {
+      res = await _client.patch(uri,
+          headers: _headers, body: body == null ? null : jsonEncode(body));
     } else {
       res = await _client.post(uri,
           headers: _headers, body: body == null ? null : jsonEncode(body));
