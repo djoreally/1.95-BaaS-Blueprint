@@ -71,6 +71,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       return NextResponse.json(await instanceRequest(user.id, slug, 'GET', '/api/health'));
     }
 
+    if (resource === 'vector') {
+      return NextResponse.json(await instanceRequest(user.id, slug, 'GET', '/api/vector/status'));
+    }
+
     return NextResponse.json({ error: 'unsupported resource' }, { status: 400 });
   } catch (error) {
     return managementError(error);
@@ -118,6 +122,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         if (!IDENT.test(collection) || !IDENT.test(id)) return NextResponse.json({ error: 'valid collection and record id required' }, { status: 400 });
         await instanceRequest(user.id, slug, 'DELETE', `/api/collections/${collection}/records/${id}`);
         return NextResponse.json({ ok: true });
+      case 'vector.upsert':
+        if (!IDENT.test(collection) || !IDENT.test(id) || !Array.isArray(body.embedding) || !body.embedding.length) {
+          return NextResponse.json({ error: 'collection, record id and embedding are required' }, { status: 400 });
+        }
+        return NextResponse.json(await instanceRequest(user.id, slug, 'POST', '/api/vector/upsert', {
+          collection,
+          id,
+          embedding: body.embedding,
+        }));
+      case 'vector.delete':
+        if (!IDENT.test(collection) || !IDENT.test(id)) {
+          return NextResponse.json({ error: 'collection and record id are required' }, { status: 400 });
+        }
+        return NextResponse.json(await instanceRequest(user.id, slug, 'POST', '/api/vector/delete', { collection, id }));
       case 'vector.query':
         if (!IDENT.test(collection) || !Array.isArray(body.embedding) || !body.embedding.length) {
           return NextResponse.json({ error: 'collection and embedding are required' }, { status: 400 });
