@@ -74,6 +74,13 @@ class InvisibleDB {
 
   Collection collection(String name) => Collection(this, name);
 
+  /// Raw escape hatch: GET/POST/DELETE against any API path.
+  Future<T> apiGet<T>(String path, {Map<String, String>? query}) =>
+      _req<T>('GET', path, query: query);
+  Future<T> apiPost<T>(String path, {Map<String, dynamic>? body}) =>
+      _req<T>('POST', path, body: body);
+  Future<T> apiDelete<T>(String path) => _req<T>('DELETE', path);
+
   /// File URL for a record's file field.
   String fileUrl(String collection, String recordId, String filename) =>
       '$baseUrl/api/files/$collection/$recordId/$filename';
