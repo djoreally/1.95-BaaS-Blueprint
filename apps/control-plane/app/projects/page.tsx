@@ -5,42 +5,51 @@ import { currentUser } from '../../lib/auth';
 import { prisma } from '../../lib/db';
 import { hasHostedEntitlement } from '../../lib/billing';
 
-const BASE_DOMAIN = 'invisibledb.app';
-
 export default async function ProjectsPage() {
   const user = await currentUser();
   if (!user) redirect('/login');
 
-  // User's databases: provision requests they've made
-  const requests = await prisma.provisionRequest.findMany({
-    where: { userId: user.id, kind: 'provision' },
+  // Unified instance list: both VPS (managed) and cPanel (BYOH) providers.
+  // One instance model, one lifecycle — the provider is an implementation detail.
+  const projects = await prisma.project.findMany({
+    where: { userId: user.id, status: { not: 'deleted' } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Also check for pending VPS provisions (not yet in Project table)
+  const pendingRequests = await prisma.provisionRequest.findMany({
+    where: { userId: user.id, kind: 'provision', status: { in: ['pending', 'claimed'] } },
     orderBy: { createdAt: 'desc' },
   });
 
   const hasEntitlement = await hasHostedEntitlement(user.id);
-  const activeInstances = requests.filter((r) => r.status === 'done');
-  const pendingInstances = requests.filter((r) => ['pending', 'claimed'].includes(r.status));
+  const readyProjects = projects.filter((p) => p.status === 'ready');
+  const provisioningProjects = projects.filter((p) => p.status === 'provisioning');
 
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>Your Databases</h1>
-        <span className="badge up">InvisibleDB Cloud</span>
         <a className="btn" href="/api/billing/portal" style={{ marginLeft: 'auto' }}>Manage billing</a>
       </div>
 
-      {pendingInstances.length > 0 && (
+      {(pendingRequests.length > 0 || provisioningProjects.length > 0) && (
         <div className="card" style={{ marginBottom: '1rem', borderColor: 'var(--warn)' }}>
           <h3 style={{ marginTop: 0 }}>Provisioning…</h3>
-          {pendingInstances.map((r) => (
+          {pendingRequests.map((r) => (
             <p key={r.id} style={{ margin: '0.5rem 0' }}>
-              <strong>{r.slug}.{BASE_DOMAIN}</strong> — your database is being created (usually under 2 minutes).
+              <strong>{r.slug}.invisibledb.app</strong> — your database is being created (usually under 2 minutes).
+            </p>
+          ))}
+          {provisioningProjects.map((p) => (
+            <p key={p.id} style={{ margin: '0.5rem 0' }}>
+              <strong>{p.fqdn}</strong> — provisioning via {p.provider === 'vps' ? 'InvisibleDB Cloud' : 'your hosting'}.
             </p>
           ))}
         </div>
       )}
 
-      {activeInstances.length === 0 && pendingInstances.length === 0 ? (
+      {readyProjects.length === 0 && pendingRequests.length === 0 && provisioningProjects.length === 0 ? (
         <div className="card">
           <h2 style={{ marginTop: 0 }}>No databases yet</h2>
           <p>
@@ -53,13 +62,15 @@ export default async function ProjectsPage() {
           )}
         </div>
       ) : (
-        activeInstances.map((r) => {
-          const url = `https://${r.slug}.${BASE_DOMAIN}`;
+        readyProjects.map((p) => {
+          const url = `https://${p.fqdn}`;
+          const providerLabel = p.provider === 'vps' ? 'InvisibleDB Cloud' : 'BYOH';
           return (
-            <div className="card" key={r.id} style={{ marginBottom: '1rem' }}>
+            <div className="card" key={p.id} style={{ marginBottom: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <strong style={{ fontSize: '1.15rem' }}>{r.slug}</strong>
+                <strong style={{ fontSize: '1.15rem' }}>{p.name}</strong>
                 <span className="badge up">READY</span>
+                <span className="badge">{providerLabel}</span>
               </div>
               <div style={{ color: 'var(--muted)', fontSize: '0.92rem', marginTop: '0.35rem' }}>
                 <a href={url} target="_blank" rel="noreferrer">{url}</a>

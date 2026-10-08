@@ -35,16 +35,48 @@ export async function GET(req: Request) {
   });
 }
 
-/** POST — report a result: { id, ok, detail? } */
+/** POST — report a result: { id, ok, detail?, fqdn? } */
 export async function POST(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id, ok, detail } = (await req.json()) as { id?: string; ok?: boolean; detail?: string };
+  const { id, ok, detail, fqdn } = (await req.json()) as { id?: string; ok?: boolean; detail?: string; fqdn?: string };
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   const status = ok ? 'done' : 'failed';
+
+  const provisionReq = await prisma.provisionRequest.findUnique({ where: { id } });
+
   await prisma.provisionRequest.update({
     where: { id },
     data: { status, result: detail ? { detail } : undefined },
   });
+
+  // On successful provision, create the unified Project record (provider=vps).
+  // This is what /projects displays — one instance model for both providers.
+  if (ok && provisionReq && provisionReq.kind === 'provision' && provisionReq.userId) {
+    const slug = provisionReq.slug;
+    const instanceFqdn = fqdn || `${slug}.${process.env.IDB_BASE_DOMAIN || 'invisibledb.app'}`;
+    await prisma.project.upsert({
+      where: { id: `vps-${slug}` },
+      update: { status: 'ready', fqdn: instanceFqdn, updatedAt: new Date() },
+      create: {
+        id: `vps-${slug}`,
+        userId: provisionReq.userId,
+        provider: 'vps',
+        name: slug,
+        domain: process.env.IDB_BASE_DOMAIN || 'invisibledb.app',
+        fqdn: instanceFqdn,
+        status: 'ready',
+      },
+    });
+  }
+
+  // On successful deprovision, mark the Project as deleted.
+  if (ok && provisionReq && provisionReq.kind === 'deprovision' && provisionReq.userId) {
+    await prisma.project.updateMany({
+      where: { userId: provisionReq.userId, provider: 'vps', name: provisionReq.slug },
+      data: { status: 'deleted' },
+    });
+  }
+
   // Failed provisions go back to pending for retry (max 5 attempts), then stay failed.
   if (!ok) {
     const r = await prisma.provisionRequest.findUnique({ where: { id } });
