@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-const APP_ROUTE_PREFIXES = ['/projects', '/billing', '/byoh', '/hosted', '/admin'];
+const APP_ROUTE_PREFIXES = ['/projects', '/billing', '/byoh', '/hosted', '/admin', '/dashboard'];
 
 function isAppRoute(pathname: string) {
   return APP_ROUTE_PREFIXES.some(
