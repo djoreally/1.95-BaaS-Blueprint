@@ -29,8 +29,8 @@ FROM debian:bookworm-slim
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libsqlite3-0 wget passwd && \
     rm -rf /var/lib/apt/lists/* && \
-    groupadd --system pocketbase && \
-    useradd --system --gid pocketbase --home /pb --create-home pocketbase && \
+    groupadd --system --gid 1000 pocketbase && \
+    useradd --system --uid 1000 --gid 1000 --home /pb --create-home pocketbase && \
     mkdir -p /pb/data && chown -R pocketbase:pocketbase /pb
 COPY --from=build /pb/pocketbase /usr/local/bin/pocketbase
 USER pocketbase
