@@ -63,7 +63,10 @@ upgrade_one() {
   log "$slug healthy on vec runtime"
 }
 
-mapfile -t tenants < <(docker ps -a --format '{{.Names}}' | grep '^idb-' | grep -v -E '^idb-(caddy|gateway)$' || true)
+# Tenant containers are named idb-<slug>. Docker Compose infrastructure uses
+# names such as idb-gateway-1 and idb-caddy-1, so exclude both the bare service
+# names and Compose's suffixed variants.
+mapfile -t tenants < <(docker ps -a --format '{{.Names}}' | grep '^idb-' | grep -v -E '^idb-(caddy|gateway)(-|$)' || true)
 for tenant in "${tenants[@]}"; do
   upgrade_one "$tenant"
 done
