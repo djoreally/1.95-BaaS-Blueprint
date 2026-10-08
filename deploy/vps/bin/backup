@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Nightly SQLite backup for one or all customers.
+# Nightly/manual SQLite backup for one or all customers.
 # Uses sqlite3 .backup (online, no downtime) inside each running container,
-# then compresses. Retention: 7 daily + 4 weekly, enforced here.
-# Off-box copy: rsync /srv/idb/backups to the OrangeHost box (see README).
+# then compresses. Retention: newest 11 snapshots per customer.
+# Off-box copy is handled separately by the host rsync cron.
 # Usage: backup [slug]   (no slug = all customers)
 set -euo pipefail
 
@@ -12,27 +12,27 @@ mkdir -p "$BACKUP_DIR"
 
 backup_one() {
   local slug="$1" name="idb-$1"
-  local stamp; stamp="$(date +%F)"
+  local stamp; stamp="$(date -u +%F-%H%M%S)"
   local tmp="/tmp/$name-$stamp.db"
   docker exec "$name" sqlite3 /pb/data/data.db ".backup '$tmp'" 2>/dev/null || {
-    echo "skip $slug (not running?)" >&2; return 0
+    echo "skip $slug (not running?)" >&2; return 1
   }
   docker cp "$name:$tmp" "$BACKUP_DIR/$slug-$stamp.db" >/dev/null
   docker exec "$name" rm -f "$tmp" >/dev/null
   gzip -f "$BACKUP_DIR/$slug-$stamp.db"
-  echo "backed up $slug"
+  echo "backed up $slug -> $slug-$stamp.db.gz"
 }
 
 if [[ "${1:-}" != "" ]]; then
   backup_one "$1"
 else
-  for c in $(docker ps --format '{{.Names}}' | grep '^idb-' | grep -v '^idb-caddy' || true); do
+  for c in $(docker ps --format '{{.Names}}' | grep '^idb-' | grep -v '^idb-caddy' | grep -v '^idb-gateway' || true); do
     backup_one "${c#idb-}"
   done
 fi
 
-# Retention: keep 7 newest per customer, plus one per week for 4 weeks.
-# (Simple version: keep newest 11 files per slug.)
-for slug in $(ls "$BACKUP_DIR" | sed 's/-[0-9-]*\.db\.gz$//' | sort -u); do
+# Keep the 11 newest snapshots per customer. The timestamped filenames allow
+# multiple safe backups on the same day (manual backup + pre-restore backup).
+for slug in $(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.db.gz' -printf '%f\n' | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]{6})?\.db\.gz$//' | sort -u); do
   ls -t "$BACKUP_DIR/$slug"-*.db.gz 2>/dev/null | tail -n +12 | xargs -r rm -f
 done
