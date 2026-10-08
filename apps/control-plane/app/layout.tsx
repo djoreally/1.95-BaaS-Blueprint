@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import JsonLd from '../components/JsonLd';
 import { currentUser } from '../lib/auth';
 import PublicSiteChrome from './components/PublicSiteChrome';
+import AppShell from './components/AppShell';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
@@ -177,7 +178,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PublicSiteChrome>
           <SiteNav />
         </PublicSiteChrome>
-        <main className="m-wrap">{children}</main>
+        <AppShell>{children}</AppShell>
         <PublicSiteChrome>
           <SiteFooter />
         </PublicSiteChrome>
