@@ -80,7 +80,7 @@ function SiteNav() {
           <a href="/tools">Tools</a>
         </nav>
         <div className="m-nav-cta">
-          <a className="m-signin" href="/signup">
+          <a className="m-signin" href="/login">
             Sign in
           </a>
           <a className="m-btn small" href="/signup">
