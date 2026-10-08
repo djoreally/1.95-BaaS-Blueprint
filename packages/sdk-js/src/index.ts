@@ -19,6 +19,8 @@ export interface InvisibleDBOptions {
   authToken?: string;
   /** Override fetch (tests, runtimes without global fetch). */
   fetchImpl?: typeof fetch;
+  /** EventSource constructor/polyfill (required for realtime outside browsers). */
+  eventSourceImpl?: typeof EventSource;
 }
 
 export interface ListOptions {
@@ -51,6 +53,12 @@ export interface AuthResult<T = DbRecord> {
   record: T;
 }
 
+export interface VectorHit<T = DbRecord> {
+  id: string;
+  distance: number;
+  record: T;
+}
+
 export class InvisibleDBError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -64,6 +72,7 @@ export class InvisibleDB {
   private apiKey?: string;
   private authToken?: string;
   private fetchImpl: typeof fetch;
+  private EventSourceImpl?: typeof EventSource;
 
   constructor(opts: InvisibleDBOptions) {
     if (!opts.baseUrl) throw new Error('baseUrl is required');
@@ -71,28 +80,32 @@ export class InvisibleDB {
     this.apiKey = opts.apiKey;
     this.authToken = opts.authToken;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.EventSourceImpl = opts.eventSourceImpl ?? globalThis.EventSource;
   }
 
   private credential(): string | undefined {
-    // End-user sessions take precedence when explicitly set. Server code normally
-    // uses only apiKey; client code uses only authToken.
     return this.authToken || this.apiKey;
   }
 
   private authHeaders(extra: Record<string, string> = {}): Record<string, string> {
     const credential = this.credential();
-    return {
-      ...extra,
-      ...(credential ? { authorization: `Bearer ${credential}` } : {}),
-    };
+    return { ...extra, ...(credential ? { authorization: `Bearer ${credential}` } : {}) };
   }
 
-  private async req<T>(method: string, path: string, body?: unknown, query?: Record<string, string>): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    query?: Record<string, string>,
+    credentialMode: 'current' | 'none' = 'current',
+  ): Promise<T> {
     const url = new URL(this.root + path);
     if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+    const headers: Record<string, string> = body === undefined ? {} : { 'content-type': 'application/json' };
+    if (credentialMode === 'current') Object.assign(headers, this.authHeaders());
     const res = await this.fetchImpl(url.toString(), {
       method,
-      headers: this.authHeaders(body === undefined ? {} : { 'content-type': 'application/json' }),
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!res.ok) {
@@ -108,35 +121,28 @@ export class InvisibleDB {
   }
 
   api = {
-    get: <T>(path: string, query?: Record<string, string>) => this.req<T>('GET', path, undefined, query),
-    post: <T>(path: string, body?: unknown) => this.req<T>('POST', path, body),
-    patch: <T>(path: string, body?: unknown) => this.req<T>('PATCH', path, body),
-    del: <T>(path: string) => this.req<T>('DELETE', path),
+    get: <T>(path: string, query?: Record<string, string>) => this.request<T>('GET', path, undefined, query),
+    post: <T>(path: string, body?: unknown) => this.request<T>('POST', path, body),
+    patch: <T>(path: string, body?: unknown) => this.request<T>('PATCH', path, body),
+    del: <T>(path: string) => this.request<T>('DELETE', path),
   };
 
-  /** End-user authentication. No instance server key is required. */
   auth = {
     login: async <T = DbRecord>(collection: string, identity: string, password: string): Promise<AuthResult<T>> => {
-      // Login must not accidentally elevate through the server key. A client app
-      // should be constructed without apiKey; temporarily omit any old user token.
-      const previous = this.authToken;
-      this.authToken = undefined;
-      try {
-        const result = await this.req<AuthResult<T>>(
-          'POST',
-          `/api/collections/${collection}/auth-with-password`,
-          { identity, password },
-        );
-        this.authToken = result.token;
-        return result;
-      } catch (error) {
-        this.authToken = previous;
-        throw error;
-      }
+      // Login is always public-lane traffic. Never attach an instance server key.
+      const result = await this.request<AuthResult<T>>(
+        'POST',
+        `/api/collections/${collection}/auth-with-password`,
+        { identity, password },
+        undefined,
+        'none',
+      );
+      this.authToken = result.token;
+      return result;
     },
     refresh: async <T = DbRecord>(collection: string): Promise<AuthResult<T>> => {
       if (!this.authToken) throw new Error('no end-user auth token is set');
-      const result = await this.req<AuthResult<T>>('POST', `/api/collections/${collection}/auth-refresh`);
+      const result = await this.request<AuthResult<T>>('POST', `/api/collections/${collection}/auth-refresh`);
       this.authToken = result.token;
       return result;
     },
@@ -150,17 +156,22 @@ export class InvisibleDB {
   }
 
   vector = {
+    upsert: (collection: string, id: string, embedding: number[]) =>
+      this.request<{ ok: boolean; dimensions: number }>('POST', '/api/vector/upsert', { collection, id, embedding }),
+    remove: (collection: string, id: string) =>
+      this.request<{ ok: boolean }>('POST', '/api/vector/delete', { collection, id }),
     query: <T = DbRecord>(collection: string, embedding: number[], limit = 10) =>
-      this.req<{ results: T[] }>('POST', '/api/vector/query', { collection, embedding, limit }),
+      this.request<{ results: VectorHit<T>[]; dimensions: number }>('POST', '/api/vector/query', { collection, embedding, limit }),
+    status: () => this.request<{ collections: Array<{ collection: string; dimensions: number }> }>('GET', '/api/vector/status'),
   };
 
-  health = () => this.req<{ message: string; data: Record<string, unknown> }>('GET', '/api/health');
+  health = () => this.request<{ message: string; data: Record<string, unknown> }>('GET', '/api/health');
 
-  /** Internal helpers used by Collection without exposing credentials publicly. */
   _internal = {
     root: () => this.root,
     authHeaders: () => this.authHeaders(),
     fetch: () => this.fetchImpl,
+    eventSource: () => this.EventSourceImpl,
   };
 }
 
@@ -193,37 +204,45 @@ export class Collection<T = DbRecord> {
     return this.db.api.del<void>(`/api/collections/${this.name}/records/${id}`);
   }
 
+  /** PocketBase SSE: GET connection -> PB_CONNECT -> POST subscription list. */
   subscribe(callback: (event: { action: string; record: T }) => void): () => void {
     const root = this.db._internal.root();
     const fetchImpl = this.db._internal.fetch();
-    let es: EventSource | null = null;
+    const EventSourceImpl = this.db._internal.eventSource();
+    if (!EventSourceImpl) throw new Error('EventSource is unavailable; provide eventSourceImpl in the InvisibleDB constructor');
+
+    const topic = `${this.name}/*`;
+    const es = new EventSourceImpl(`${root}/api/realtime`);
     let stopped = false;
 
-    const connect = async () => {
-      const res = await fetchImpl(`${root}/api/realtime`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...this.db._internal.authHeaders() },
-      });
-      if (!res.ok || stopped) return;
-      const { clientId } = (await res.json()) as { clientId: string };
-      es = new EventSource(`${root}/api/realtime?clientId=${clientId}`);
-      es.onmessage = (msg) => {
-        try {
-          const data = JSON.parse(msg.data) as { action: string; record: T };
-          callback(data);
-        } catch { /* keep-alive frames */ }
-      };
-      await fetchImpl(`${root}/api/realtime`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...this.db._internal.authHeaders() },
-        body: JSON.stringify({ clientId, subscriptions: [this.name] }),
-      }).catch(() => {});
+    const recordListener = (raw: Event) => {
+      try {
+        const event = raw as MessageEvent;
+        callback(JSON.parse(event.data) as { action: string; record: T });
+      } catch { /* ignore malformed/keepalive frames */ }
     };
-    connect().catch(() => {});
+    es.addEventListener(topic, recordListener as EventListener);
+
+    const connectListener = (raw: Event) => {
+      if (stopped) return;
+      const event = raw as MessageEvent;
+      const clientId = event.lastEventId;
+      if (!clientId) return;
+      void fetchImpl(`${root}/api/realtime`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...this.db._internal.authHeaders() },
+        body: JSON.stringify({ clientId, subscriptions: [topic] }),
+      }).then((response) => {
+        if (!response.ok) throw new Error(`realtime subscription failed (${response.status})`);
+      }).catch(() => { /* EventSource reconnect will produce another PB_CONNECT */ });
+    };
+    es.addEventListener('PB_CONNECT', connectListener as EventListener);
 
     return () => {
       stopped = true;
-      es?.close();
+      es.removeEventListener(topic, recordListener as EventListener);
+      es.removeEventListener('PB_CONNECT', connectListener as EventListener);
+      es.close();
     };
   }
 }
