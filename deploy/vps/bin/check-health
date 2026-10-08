@@ -31,8 +31,8 @@ if ! docker ps --format '{{.Names}}' | grep -q '^idb-caddy$'; then
   CRITICAL=1
 fi
 
-# Gateway
-if ! curl -sf http://localhost:8080/health >/dev/null 2>&1; then
+# Gateway — gateway.js exposes /healthz.
+if ! curl -sf http://localhost:8080/healthz >/dev/null 2>&1; then
   log "CRITICAL: auth gateway health check failed"
   CRITICAL=1
 fi
