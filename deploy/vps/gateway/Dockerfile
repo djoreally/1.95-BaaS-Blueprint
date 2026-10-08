@@ -1,4 +1,5 @@
 FROM node:20-alpine
+RUN apk add --no-cache wget
 WORKDIR /app
 COPY gateway.js ./
 ENV PORT=8080 KEYS_DIR=/keys
