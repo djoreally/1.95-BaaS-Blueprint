@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 const CUSTOMER_APP_PREFIXES = ['/projects', '/billing', '/byoh', '/hosted', '/dashboard'];
 const DB_SECTIONS = ['overview', 'connect', 'auth', 'database', 'storage', 'vector', 'realtime', 'backups', 'settings'] as const;
@@ -29,17 +29,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const parts = pathname.split('/').filter(Boolean);
   const slug = parts[0] === 'projects' && parts.length >= 2 ? parts[1] : null;
   const section = slug && parts.length >= 3 ? parts[2] : 'overview';
-
-  const databaseItems = useMemo(
-    () => slug
-      ? DB_SECTIONS.map((item) => ({
-          label: titleCase(item),
-          href: `/projects/${encodeURIComponent(slug)}/${item}`,
-          active: section === item,
-        }))
-      : [],
-    [slug, section],
-  );
+  const databaseItems = slug
+    ? DB_SECTIONS.map((item) => ({
+        label: titleCase(item),
+        href: `/projects/${encodeURIComponent(slug)}/${item}`,
+        active: section === item,
+      }))
+    : [];
 
   const primaryItems = [
     { label: 'Databases', href: '/projects', active: pathname === '/projects' },
@@ -49,14 +45,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const sidebar = (
     <>
-      <div className="idb-sidebar-head">
-        <div className="idb-sidebar-label">Workspace</div>
-      </div>
+      <div className="idb-sidebar-head"><div className="idb-sidebar-label">Workspace</div></div>
       <nav className="idb-nav" aria-label="Control panel">
         {primaryItems.map((item) => (
-          <a key={item.href} href={item.href} className={item.active ? 'active' : ''}>
-            {item.label}
-          </a>
+          <a key={item.href} href={item.href} className={item.active ? 'active' : ''}>{item.label}</a>
         ))}
       </nav>
 
@@ -69,9 +61,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
           <nav className="idb-nav" aria-label={`${slug} database`}>
             {databaseItems.map((item) => (
-              <a key={item.href} href={item.href} className={item.active ? 'active' : ''}>
-                {item.label}
-              </a>
+              <a key={item.href} href={item.href} className={item.active ? 'active' : ''}>{item.label}</a>
             ))}
           </nav>
         </>
@@ -110,21 +100,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
       `}</style>
 
       <header className="idb-topbar">
-        <button
-          className="idb-menu-btn"
-          type="button"
-          aria-label="Open navigation"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          ☰
-        </button>
+        <button className="idb-menu-btn" type="button" aria-label="Open navigation" aria-expanded={open} onClick={() => setOpen((value) => !value)}>☰</button>
         <a href="/projects" className="idb-brand"><span>Invisible</span>DB</a>
         <div className="idb-topbar-context">{slug ? `${slug} / ${titleCase(section)}` : 'Control Panel'}</div>
-        <div className="idb-topbar-actions">
-          <a href="/">Website</a>
-          <a href="/logout">Sign out</a>
-        </div>
+        <div className="idb-topbar-actions"><a href="/">Website</a><a href="/logout">Sign out</a></div>
       </header>
 
       {open ? (
