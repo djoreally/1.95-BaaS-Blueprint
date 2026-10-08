@@ -6,9 +6,6 @@
  *     The gateway swaps it for the tenant PocketBase superuser token.
  *   - Normal PocketBase user token (or no token) => passed through unchanged.
  *     PocketBase collection rules remain the authorization boundary for web/mobile.
- *
- * This lets mobile/browser apps authenticate real end users without embedding the
- * instance server key while preserving the one-key server SDK experience.
  */
 'use strict';
 
@@ -20,7 +17,6 @@ const crypto = require('crypto');
 const KEYS_DIR = process.env.KEYS_DIR || '/keys';
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const upstreamHost = (slug) => process.env.PB_UPSTREAM || `idb-${slug}`;
-
 const cache = new Map();
 
 function readIfChanged(file, prevMtime) {
@@ -55,22 +51,22 @@ function timingSafeMatch(value, expectedValue) {
 function pbRequest(slug, method, reqPath, body, token) {
   return new Promise((resolve, reject) => {
     const data = body ? Buffer.from(JSON.stringify(body)) : null;
-    const req = http.request({
+    const request = http.request({
       host: upstreamHost(slug), port: 8090, path: reqPath, method,
       headers: {
         ...(data ? { 'Content-Type': 'application/json', 'Content-Length': data.length } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       timeout: 10000,
-    }, (res) => {
+    }, (response) => {
       const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
+      response.on('data', (c) => chunks.push(c));
+      response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(chunks) }));
     });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('pb timeout')));
-    if (data) req.write(data);
-    req.end();
+    request.on('error', reject);
+    request.on('timeout', () => request.destroy(new Error('pb timeout')));
+    if (data) request.write(data);
+    request.end();
   });
 }
 
@@ -94,30 +90,26 @@ function proxyPublic(req, res, slug) {
     res.writeHead(upRes.statusCode, upRes.headers);
     upRes.pipe(res);
   });
-  upstream.on('error', () => { res.writeHead(502); res.end('bad gateway'); });
-  upstream.on('timeout', () => upstream.destroy());
+  upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end('bad gateway'); });
+  upstream.on('timeout', () => upstream.destroy(new Error('upstream timeout')));
   req.pipe(upstream);
 }
 
-function proxyAdmin(req, res, slug, entry, pbToken, retried) {
+function proxyAdmin(req, res, slug, entry, pbToken) {
   const upstream = http.request({
     host: upstreamHost(slug), port: 8090,
     path: req.url, method: req.method,
     headers: { ...req.headers, host: `${upstreamHost(slug)}:8090`, authorization: `Bearer ${pbToken}` },
     timeout: 30000,
   }, (upRes) => {
-    if (upRes.statusCode === 401 && !retried) {
-      entry.pbToken = null;
-      pbTokenFor(slug, entry).then((t) => proxyAdmin(req, res, slug, entry, t, true))
-        .catch(() => { res.writeHead(502); res.end('upstream auth failed'); });
-      upRes.resume();
-      return;
-    }
+    // Never replay req here: its body stream has already been consumed. Clear the
+    // cached PocketBase token so the NEXT client request authenticates afresh.
+    if (upRes.statusCode === 401) entry.pbToken = null;
     res.writeHead(upRes.statusCode, upRes.headers);
     upRes.pipe(res);
   });
-  upstream.on('error', () => { res.writeHead(502); res.end('bad gateway'); });
-  upstream.on('timeout', () => upstream.destroy());
+  upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end('bad gateway'); });
+  upstream.on('timeout', () => upstream.destroy(new Error('upstream timeout')));
   req.pipe(upstream);
 }
 
@@ -126,7 +118,10 @@ function blockedPublicPath(reqUrl) {
   return pathname.startsWith('/_/') ||
     pathname.startsWith('/api/collections/_superusers') ||
     pathname.startsWith('/api/settings') ||
-    pathname.startsWith('/api/backups');
+    pathname.startsWith('/api/backups') ||
+    pathname === '/api/vector/upsert' ||
+    pathname === '/api/vector/delete' ||
+    pathname === '/api/vector/status';
 }
 
 const server = http.createServer(async (req, res) => {
@@ -140,10 +135,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && (req.url === '/' || req.url === '')) {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({
-      service: 'InvisibleDB',
-      instance: slug,
-      status: 'ready',
-      api: '/api',
+      service: 'InvisibleDB', instance: slug, status: 'ready', api: '/api',
       message: 'Connect with an InvisibleDB SDK or REST client.',
     }));
     return;
@@ -155,15 +147,13 @@ const server = http.createServer(async (req, res) => {
   if (serverKey) {
     try {
       const token = await pbTokenFor(slug, entry);
-      proxyAdmin(req, res, slug, entry, token, false);
+      proxyAdmin(req, res, slug, entry, token);
     } catch {
       res.writeHead(502); res.end('upstream unavailable');
     }
     return;
   }
 
-  // A mistyped server key should fail as a server key rather than being treated
-  // as an end-user token. PocketBase JWT/user tokens do not use this prefix.
   if (bearer.startsWith('idb_live_')) {
     res.writeHead(401); res.end('invalid api key'); return;
   }
@@ -172,8 +162,6 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(403); res.end('management endpoint requires instance server key'); return;
   }
 
-  // Normal browser/mobile lane: no token for public rules, or a PocketBase user
-  // token for authenticated collection rules. The gateway does not elevate it.
   proxyPublic(req, res, slug);
 });
 
