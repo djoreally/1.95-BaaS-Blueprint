@@ -22,6 +22,8 @@ model User {
   passwordHash String?
   role         String   @default("user") // "user" | "admin"
   provisionRequests ProvisionRequest[]
+  runtimeCommands RuntimeCommand[]
+  instanceStates InstanceState[]
   createdAt    DateTime @default(now())
 
   connections  HostingConnection[]
@@ -104,4 +106,42 @@ model ProvisionRequest {
   updatedAt DateTime @updatedAt
 
   @@index([status])
+}
+
+// Runtime operations are deliberately separate from provisioning. The VPS polls
+// these commands and reports structured results back to the control plane.
+model RuntimeCommand {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug                   String
+  kind                   String    // status | logs | backup | restore | restart | rotate_key | usage
+  payload                Json?
+  status                 String    @default("pending") // pending | claimed | done | failed
+  attempts               Int       @default(0)
+  result                  Json?
+  secretResultEncrypted  String?   @db.Text
+  claimedAt              DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId, slug, createdAt])
+}
+
+// Latest structured runtime snapshot for each customer instance. This keeps the
+// dashboard fast and avoids making page loads wait for the VPS.
+model InstanceState {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug       String
+  snapshot   Json
+  observedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, slug])
+  @@index([slug])
 }
