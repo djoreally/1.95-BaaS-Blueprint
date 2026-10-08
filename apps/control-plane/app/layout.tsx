@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import JsonLd from '../components/JsonLd';
+import { currentUser } from '../lib/auth';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
@@ -65,10 +66,7 @@ const siteJsonLd = {
   ],
 };
 
-import { currentUser } from '../lib/auth';
-
-async function SiteNav() {
-  const user = await currentUser().catch(() => null);
+function SiteNav() {
   return (
     <header className="m-nav">
       <div className="m-nav-inner">
@@ -83,25 +81,12 @@ async function SiteNav() {
           <a href="/tools">Tools</a>
         </nav>
         <div className="m-nav-cta">
-          {user ? (
-            <>
-              <a className="m-signin" href="/projects">
-                Dashboard
-              </a>
-              <a className="m-btn small" href="/logout">
-                Sign out
-              </a>
-            </>
-          ) : (
-            <>
-              <a className="m-signin" href="/login">
-                Sign in
-              </a>
-              <a className="m-btn small" href="/signup">
-                Get started
-              </a>
-            </>
-          )}
+          <a className="m-signin" href="/login">
+            Sign in
+          </a>
+          <a className="m-btn small" href="/signup">
+            Get started
+          </a>
         </div>
       </div>
     </header>
@@ -206,8 +191,11 @@ function SiteFooter() {
   );
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const verificationId = process.env.GOOGLE_VERIFICATION_ID;
+  const user = await currentUser().catch(() => null);
+  const isAuthenticated = Boolean(user);
+
   return (
     <html lang="en">
       <head>
@@ -218,9 +206,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ) : null}
       </head>
       <body className={inter.className}>
-        <SiteNav />
+        {!isAuthenticated ? <SiteNav /> : null}
         <main className="m-wrap">{children}</main>
-        <SiteFooter />
+        {!isAuthenticated ? <SiteFooter /> : null}
       </body>
     </html>
   );
