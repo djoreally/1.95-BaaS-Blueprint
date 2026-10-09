@@ -5,12 +5,9 @@
 #   /srv/idb/backups/    nightly SQLite dumps (host cron -> bin/backup)
 #   /srv/idb/keys/       per-customer API keys (<slug>.key, 0600)
 #
-# Customer traffic: <slug>.BASE_DOMAIN -> Caddy -> idb-<slug> container.
-# The auth gateway (Phase 2) sits between Caddy and PocketBase and validates
-# `Authorization: Bearer <apiKey>`.
-#
-# Per-customer PocketBase containers are created by bin/provision (not listed
-# here — they join the idb-net network at provision time).
+# Customer traffic: <slug>.BASE_DOMAIN -> Caddy -> gateway -> isolated tenant network.
+# Per-customer PocketBase containers are created by bin/provision and are attached
+# to dedicated idb-tenant-<slug> bridge networks, never the shared edge network.
 
 name: idb
 
@@ -29,12 +26,10 @@ services:
     environment:
       BASE_DOMAIN: ${BASE_DOMAIN:?set BASE_DOMAIN in .env}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      EDGE_SECRET: ${EDGE_SECRET:?set EDGE_SECRET in .env}
     networks:
       - idb-net
 
-  # Auth gateway: validates `Authorization: Bearer <apiKey>` against
-  # /srv/idb/keys, swaps in the customer's PocketBase superuser token,
-  # and proxies to the right idb-<slug> container. Zero dependencies.
   gateway:
     build: ./gateway
     restart: unless-stopped
@@ -45,6 +40,10 @@ services:
     environment:
       PORT: "8080"
       KEYS_DIR: /keys
+      EDGE_SECRET: ${EDGE_SECRET:?set EDGE_SECRET in .env}
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-67108864}
+      PUBLIC_RATE_PER_MINUTE: ${PUBLIC_RATE_PER_MINUTE:-600}
+      MANAGEMENT_RATE_PER_MINUTE: ${MANAGEMENT_RATE_PER_MINUTE:-180}
     networks:
       - idb-net
 
