@@ -5,6 +5,7 @@
 # Result: running PocketBase container, Caddy route with TLS, API key file,
 #         and the customer snippet printed to stdout.
 set -euo pipefail
+umask 077
 
 IDB_ROOT="${IDB_ROOT:-/srv/idb}"
 SLUG="${1:?usage: provision <slug> <admin-email>}"
@@ -13,9 +14,11 @@ ADMIN_EMAIL="${2:?usage: provision <slug> <admin-email>}"
 if [[ ! "$SLUG" =~ ^[a-z0-9-]+$ ]]; then echo "bad slug: $SLUG" >&2; exit 1; fi
 # shellcheck source=/dev/null
 source "$IDB_ROOT/.env"
+: "${EDGE_SECRET:?EDGE_SECRET must be set before provisioning tenants}"
 
 NAME="idb-$SLUG"
 VOL="$NAME-data"
+NET="idb-tenant-$SLUG"
 HOST="$SLUG.$BASE_DOMAIN"
 KEY_FILE="$IDB_ROOT/keys/$SLUG.key"
 
@@ -32,34 +35,50 @@ API_KEY="idb_live_$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
 printf '%s' "$API_KEY" > "$KEY_FILE"
 chmod 600 "$KEY_FILE"
 
-# 2. Data volume + vec-capable PocketBase runtime on the shared customer network.
+# 2. Dedicated tenant network. Caddy never joins tenant networks; only the
+# gateway and this customer's PocketBase container share this bridge.
+docker network inspect "$NET" >/dev/null 2>&1 || docker network create "$NET" >/dev/null
+GATEWAY_ID="$(docker compose -f "$IDB_ROOT/docker-compose.yml" ps -q gateway)"
+if [[ -z "$GATEWAY_ID" ]]; then echo "gateway is not running" >&2; exit 1; fi
+docker network connect "$NET" "$GATEWAY_ID" >/dev/null 2>&1 || true
+
+# 3. Data volume + vec-capable PocketBase runtime.
 PB_IMAGE="${IDB_PB_IMAGE:-idb-pocketbase:vec}"
 docker volume create "$VOL" >/dev/null
 docker run -d --name "$NAME" \
   --restart unless-stopped \
-  --network idb_idb-net \
+  --network "$NET" \
   --memory 256m --memory-swap 256m \
   --pids-limit 128 \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL \
   -v "$VOL:/pb/data" \
   "$PB_IMAGE" \
   serve --http=0.0.0.0:8090 --dir=/pb/data \
   >/dev/null
 
-# 3. Wait for health, then bootstrap the superuser used only behind the gateway.
+# 4. Wait for health, then bootstrap the superuser used only behind the gateway.
 for i in $(seq 1 30); do
   if docker exec "$NAME" wget -q -O /dev/null http://localhost:8090/api/health 2>/dev/null; then break; fi
   sleep 2
 done
+if ! docker exec "$NAME" wget -q -O /dev/null http://localhost:8090/api/health 2>/dev/null; then
+  echo "tenant failed health check: $NAME" >&2
+  docker logs --tail 100 "$NAME" >&2 || true
+  exit 1
+fi
 ADMIN_PASS="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
 docker exec "$NAME" pocketbase superuser upsert "$ADMIN_EMAIL" "$ADMIN_PASS" --dir=/pb/data >/dev/null
 printf '%s' "$ADMIN_EMAIL:$ADMIN_PASS" > "$IDB_ROOT/keys/$SLUG.admin"
 chmod 600 "$IDB_ROOT/keys/$SLUG.admin"
 
-# 4. Caddy route -> gateway. The gateway distinguishes the privileged instance
-# key from regular PocketBase end-user auth tokens.
+# 5. Caddy route -> gateway. Caddy injects an internal edge credential that is
+# removed by the gateway before any request reaches PocketBase.
 cat > "$IDB_ROOT/caddy/sites/$SLUG.caddy" <<EOF
 $HOST {
-	reverse_proxy gateway:8080
+	reverse_proxy gateway:8080 {
+		header_up X-IDB-Edge-Secret {\$EDGE_SECRET}
+	}
 }
 EOF
 docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
@@ -67,6 +86,7 @@ docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload --confi
 echo "--- provisioned ---"
 echo "url:      https://$HOST"
 echo "key file: $KEY_FILE (0600)"
+echo "network:  $NET"
 echo ""
 echo "server snippet:"
 echo "  const db = new InvisibleDB({"
