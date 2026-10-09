@@ -4,12 +4,13 @@
 # trusted edge secret, rewrites Caddy tenant routes, and restarts only Caddy and
 # the gateway. Run bin/upgrade-runtime afterward to recreate tenant containers
 # onto dedicated networks with least-privilege flags.
-set -euo pipefail
+set -Eeuo pipefail
 umask 077
 
 IDB_ROOT="${IDB_ROOT:-/srv/idb}"
 ENV_FILE="$IDB_ROOT/.env"
 cd "$IDB_ROOT"
+trap 'rc=$?; printf "[harden] ERROR line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2' ERR
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "missing $ENV_FILE" >&2
@@ -63,6 +64,10 @@ if [[ -z "$GATEWAY_ID" ]]; then
   echo "gateway failed to start" >&2
   exit 1
 fi
+
+# Reattach any isolated tenant networks that already exist. This makes the edge
+# restart idempotent even during a partially completed migration.
+"$IDB_ROOT/bin/attach-tenant-networks"
 
 if ! docker exec "$GATEWAY_ID" wget -q -O - http://localhost:8080/healthz >/dev/null; then
   echo "gateway health check failed" >&2
