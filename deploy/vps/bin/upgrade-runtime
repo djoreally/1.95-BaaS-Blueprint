@@ -86,5 +86,10 @@ done
 chmod +x "$IDB_ROOT/bin/"*
 
 log "runtime upgrade complete"
-log "gateway: $(curl -fsS http://localhost:8080/healthz || echo FAILED)"
+GATEWAY_NAME="$(docker compose ps -q gateway)"
+if [[ -n "$GATEWAY_NAME" ]] && docker exec "$GATEWAY_NAME" wget -q -O - http://localhost:8080/healthz >/dev/null 2>&1; then
+  log "gateway: healthy"
+else
+  log "gateway: FAILED"
+fi
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep '^idb-' || true
