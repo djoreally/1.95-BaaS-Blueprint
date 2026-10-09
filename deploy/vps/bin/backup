@@ -1,32 +1,94 @@
 #!/usr/bin/env bash
 # Nightly/manual SQLite backup for one or all customers.
-# Uses sqlite3 .backup (online, no downtime) inside each running container,
-# then compresses. Retention: newest 11 snapshots per customer.
+# Uses a one-shot helper container with sqlite3 against the tenant named volume,
+# so backup safety does not depend on utilities installed in the running tenant.
+# SQLite .backup is online-safe; the customer container remains running.
+# Retention: newest 11 snapshots per customer.
 # Off-box copy is handled separately by the host rsync cron.
 # Usage: backup [slug]   (no slug = all customers)
 set -euo pipefail
+umask 077
 
 IDB_ROOT="${IDB_ROOT:-/srv/idb}"
 BACKUP_DIR="$IDB_ROOT/backups"
+BACKUP_IMAGE="${IDB_BACKUP_IMAGE:-idb-pocketbase:vec}"
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 backup_one() {
-  local slug="$1" name="idb-$1"
-  local stamp; stamp="$(date -u +%F-%H%M%S)"
-  local tmp="/tmp/$name-$stamp.db"
-  docker exec "$name" sqlite3 /pb/data/data.db ".backup '$tmp'" 2>/dev/null || {
-    echo "skip $slug (not running?)" >&2; return 1
+  local slug name volume
+  slug="$1"
+  name="idb-$slug"
+  volume="$name-data"
+
+  local stamp out helper integrity
+  stamp="$(date -u +%F-%H%M%S)"
+  out="$slug-$stamp.db"
+  helper="idb-backup-$slug-$stamp"
+
+  if ! docker inspect "$name" >/dev/null 2>&1; then
+    echo "skip $slug (container not found)" >&2
+    return 1
+  fi
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)" != "true" ]]; then
+    echo "skip $slug (container not running)" >&2
+    return 1
+  fi
+  if ! docker volume inspect "$volume" >/dev/null 2>&1; then
+    echo "skip $slug (volume $volume not found)" >&2
+    return 1
+  fi
+  if ! docker image inspect "$BACKUP_IMAGE" >/dev/null 2>&1; then
+    echo "backup helper image $BACKUP_IMAGE is not available" >&2
+    return 1
+  fi
+
+  cleanup() {
+    docker rm -f "$helper" >/dev/null 2>&1 || true
   }
-  docker cp "$name:$tmp" "$BACKUP_DIR/$slug-$stamp.db" >/dev/null
-  docker exec "$name" rm -f "$tmp" >/dev/null
-  gzip -f "$BACKUP_DIR/$slug-$stamp.db"
-  echo "backed up $slug -> $slug-$stamp.db.gz"
+  trap cleanup RETURN
+
+  # Open the live source explicitly read-only. This prevents SQLite from trying
+  # to mutate the live database/journal while PocketBase has it open. The
+  # snapshot itself is written into the helper's writable /tmp.
+  docker run --name "$helper" \
+    --user 0:0 \
+    --network none \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --entrypoint sqlite3 \
+    -v "$volume:/pb/data:ro" \
+    "$BACKUP_IMAGE" \
+    'file:/pb/data/data.db?mode=ro' ".backup '/tmp/$out'" >/dev/null
+
+  docker cp "$helper:/tmp/$out" "$BACKUP_DIR/$out" >/dev/null
+  chmod 600 "$BACKUP_DIR/$out"
+
+  # Refuse to keep a backup that SQLite itself cannot read cleanly.
+  integrity="$(docker run --rm \
+    --user 0:0 \
+    --network none \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --entrypoint sqlite3 \
+    -v "$BACKUP_DIR/$out:/backup.db:ro" \
+    "$BACKUP_IMAGE" \
+    'file:/backup.db?mode=ro' 'PRAGMA integrity_check;' 2>/dev/null || true)"
+  if [[ "$integrity" != "ok" ]]; then
+    rm -f "$BACKUP_DIR/$out"
+    echo "backup integrity check failed for $slug: ${integrity:-no result}" >&2
+    return 1
+  fi
+
+  gzip -f "$BACKUP_DIR/$out"
+  chmod 600 "$BACKUP_DIR/$out.gz"
+  echo "backed up $slug -> $out.gz"
 }
 
 if [[ "${1:-}" != "" ]]; then
   backup_one "$1"
 else
-  for c in $(docker ps --format '{{.Names}}' | grep '^idb-' | grep -v '^idb-caddy' | grep -v '^idb-gateway' || true); do
+  for c in $(docker ps --format '{{.Names}}' | grep '^idb-' | grep -v -E '^idb-(caddy|gateway)(-|$)' || true); do
     backup_one "${c#idb-}"
   done
 fi

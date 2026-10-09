@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Reattach the current gateway container to every dynamically created tenant
+# network. Docker Compose does not know about these networks, so a gateway
+# recreate would otherwise drop the attachments and make tenants unreachable.
+set -Eeuo pipefail
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+cd "$IDB_ROOT"
+
+GATEWAY_ID="$(docker compose ps -q gateway)"
+if [[ -z "$GATEWAY_ID" ]]; then
+  echo "gateway is not running" >&2
+  exit 1
+fi
+
+mapfile -t networks < <(docker network ls --format '{{.Name}}' | grep '^idb-tenant-' || true)
+for net in "${networks[@]}"; do
+  docker network connect "$net" "$GATEWAY_ID" >/dev/null 2>&1 || true
+done
+
+echo "gateway attached to ${#networks[@]} tenant network(s)"

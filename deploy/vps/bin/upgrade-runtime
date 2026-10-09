@@ -1,84 +1,156 @@
 #!/usr/bin/env bash
-# Upgrade the InvisibleDB runtime on an already-provisioned VPS.
+# Upgrade/harden the InvisibleDB runtime on an already-provisioned VPS.
 # Assumes the updated deploy/vps directory has already been synced to /srv/idb.
 # Data volumes, keys, Caddy data, backups and .env are never deleted.
-set -euo pipefail
+set -Eeuo pipefail
 
 IDB_ROOT="${IDB_ROOT:-/srv/idb}"
 cd "$IDB_ROOT"
 source "$IDB_ROOT/.env"
+: "${EDGE_SECRET:?EDGE_SECRET must be set before runtime upgrade}"
 
 NEW_IMAGE="idb-pocketbase:vec"
-OLD_IMAGE="idb-pocketbase:latest"
 
 log() { printf '[upgrade] %s\n' "$*"; }
+fail() { printf '[upgrade] ERROR: %s\n' "$*" >&2; exit 1; }
+trap 'rc=$?; printf "[upgrade] ERROR line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2' ERR
 
 log "building vec-capable PocketBase runtime"
 docker build -f pocketbase/Dockerfile.vec -t "$NEW_IMAGE" pocketbase
 
-log "rebuilding gateway with end-user/server-key split"
+log "rebuilding gateway with hardened edge settings"
 docker compose build gateway
 docker compose up -d gateway caddy
+GATEWAY_ID="$(docker compose ps -q gateway)"
+[[ -n "$GATEWAY_ID" ]] || fail "gateway is not running"
+
+# Gateway tenant-network attachments are not part of docker-compose.yml because
+# the networks are dynamic. Reattach all already-created tenant bridges every
+# time the gateway container is recreated.
+"$IDB_ROOT/bin/attach-tenant-networks"
+
+ensure_tenant_network() {
+  local slug="$1"
+  local net="idb-tenant-$slug"
+  if ! docker network inspect "$net" >/dev/null 2>&1; then
+    log "creating isolated network $net"
+    docker network create "$net" >/dev/null
+  fi
+  docker network connect "$net" "$GATEWAY_ID" >/dev/null 2>&1 || true
+}
 
 start_tenant() {
-  local name="$1" image="$2" volume="$3"
+  local name="$1" image="$2" volume="$3" net="$4"
   docker run -d --name "$name" \
     --restart unless-stopped \
-    --network idb_idb-net \
+    --network "$net" \
     --memory 256m --memory-swap 256m \
     --pids-limit 128 \
+    --security-opt no-new-privileges:true \
+    --cap-drop ALL \
     -v "$volume:/pb/data" \
     "$image" \
     serve --http=0.0.0.0:8090 --dir=/pb/data >/dev/null
 }
 
+wait_healthy() {
+  local name="$1"
+  for _ in $(seq 1 45); do
+    if docker exec "$name" wget -q -O /dev/null http://localhost:8090/api/health 2>/dev/null; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+rollback_one() {
+  local name="$1" slug="$2" image="$3" volume="$4" network="$5"
+  log "rolling back $slug to previous image/network without touching its volume"
+  docker rm -f "$name" >/dev/null 2>&1 || true
+  docker network inspect "$network" >/dev/null 2>&1 || docker network create "$network" >/dev/null
+  start_tenant "$name" "$image" "$volume" "$network"
+  if ! wait_healthy "$name"; then
+    docker logs --tail 100 "$name" 2>&1 || true
+    fail "rollback failed for $slug; manual intervention required"
+  fi
+  log "$slug rollback healthy"
+}
+
 upgrade_one() {
-  local name="$1" slug="${1#idb-}" volume="${1}-data"
+  local name="$1"
+  local slug="${1#idb-}"
+  local net="idb-tenant-$slug"
+  local previous_image previous_network volume
+
+  previous_image="$(docker inspect --format '{{.Config.Image}}' "$name")"
+  previous_network="$(docker inspect --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$name" | head -n1)"
+  volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/pb/data"}}{{.Name}}{{end}}{{end}}' "$name")"
+
+  [[ -n "$previous_image" ]] || fail "cannot determine previous image for $slug"
+  [[ -n "$previous_network" ]] || fail "cannot determine previous network for $slug"
+  [[ -n "$volume" ]] || fail "cannot determine data volume for $slug"
+
+  ensure_tenant_network "$slug"
+
   log "creating safety backup for $slug"
   "$IDB_ROOT/bin/backup" "$slug"
 
-  log "upgrading $slug to $NEW_IMAGE"
+  log "migrating $slug from $previous_network to isolated network $net"
   docker stop "$name" >/dev/null
   docker rm "$name" >/dev/null
 
-  # Wait until Docker/containerd has fully released the old container state.
   for _ in $(seq 1 10); do
     if ! docker inspect "$name" >/dev/null 2>&1; then break; fi
     sleep 1
   done
   sleep 1
 
-  if ! start_tenant "$name" "$NEW_IMAGE" "$volume"; then
-    log "initial start failed for $slug; retrying once after container cleanup"
-    docker rm -f "$name" >/dev/null 2>&1 || true
-    sleep 2
-    if ! start_tenant "$name" "$NEW_IMAGE" "$volume"; then
-      log "failed to start new image for $slug; rolling back"
-      docker rm -f "$name" >/dev/null 2>&1 || true
-      start_tenant "$name" "$OLD_IMAGE" "$volume"
-      return 1
-    fi
-  fi
-
-  local ok=0
-  for _ in $(seq 1 45); do
-    if docker exec "$name" wget -q -O /dev/null http://localhost:8090/api/health 2>/dev/null; then ok=1; break; fi
-    sleep 2
-  done
-
-  if [[ "$ok" != "1" ]]; then
-    log "health check failed for $slug; new runtime logs follow"
-    docker logs --tail 100 "$name" 2>&1 || true
-    log "rolling back without touching its volume"
-    docker rm -f "$name" >/dev/null 2>&1 || true
-    start_tenant "$name" "$OLD_IMAGE" "$volume"
+  if ! start_tenant "$name" "$NEW_IMAGE" "$volume" "$net"; then
+    rollback_one "$name" "$slug" "$previous_image" "$volume" "$previous_network"
     return 1
   fi
 
-  log "$slug healthy on vec runtime"
+  if ! wait_healthy "$name"; then
+    log "health check failed for $slug; new runtime logs follow"
+    docker logs --tail 100 "$name" 2>&1 || true
+    rollback_one "$name" "$slug" "$previous_image" "$volume" "$previous_network"
+    return 1
+  fi
+
+  # Assert the tenant is no longer attached to the shared edge bridge.
+  if docker inspect "$name" --format '{{json .NetworkSettings.Networks}}' | grep -q 'idb_idb-net'; then
+    log "$slug is still attached to the shared edge network"
+    rollback_one "$name" "$slug" "$previous_image" "$volume" "$previous_network"
+    return 1
+  fi
+
+  # Assert least-privilege container settings landed.
+  if [[ "$(docker inspect "$name" --format '{{json .HostConfig.CapDrop}}')" != *'ALL'* ]]; then
+    log "$slug is missing CapDrop=ALL"
+    rollback_one "$name" "$slug" "$previous_image" "$volume" "$previous_network"
+    return 1
+  fi
+  if [[ "$(docker inspect "$name" --format '{{json .HostConfig.SecurityOpt}}')" != *'no-new-privileges'* ]]; then
+    log "$slug is missing no-new-privileges"
+    rollback_one "$name" "$slug" "$previous_image" "$volume" "$previous_network"
+    return 1
+  fi
+
+  # Verify the gateway can reach this tenant on its dedicated bridge.
+  if ! docker exec "$GATEWAY_ID" wget -q -O /dev/null "http://$name:8090/api/health" 2>/dev/null; then
+    log "gateway cannot reach $slug on $net"
+    rollback_one "$name" "$slug" "$previous_image" "$volume" "$previous_network"
+    return 1
+  fi
+
+  log "$slug healthy, least-privilege, and isolated on $net"
 }
 
 mapfile -t tenants < <(docker ps -a --format '{{.Names}}' | grep '^idb-' | grep -v -E '^idb-(caddy|gateway)(-|$)' || true)
+[[ ${#tenants[@]} -gt 0 ]] || fail "no tenant containers discovered"
+log "discovered tenants: ${tenants[*]}"
+
 for tenant in "${tenants[@]}"; do
   upgrade_one "$tenant"
 done
@@ -86,10 +158,7 @@ done
 chmod +x "$IDB_ROOT/bin/"*
 
 log "runtime upgrade complete"
-GATEWAY_NAME="$(docker compose ps -q gateway)"
-if [[ -n "$GATEWAY_NAME" ]] && docker exec "$GATEWAY_NAME" wget -q -O - http://localhost:8080/healthz >/dev/null 2>&1; then
-  log "gateway: healthy"
-else
-  log "gateway: FAILED"
-fi
+GATEWAY_HEALTH="$(docker exec "$GATEWAY_ID" wget -q -O - http://localhost:8080/healthz 2>/dev/null || echo FAILED)"
+log "gateway: $GATEWAY_HEALTH"
+[[ "$GATEWAY_HEALTH" == "ok" ]] || fail "gateway health check failed"
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep '^idb-' || true

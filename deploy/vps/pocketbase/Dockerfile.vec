@@ -27,7 +27,7 @@ RUN go get github.com/asg017/sqlite-vec-go-bindings@${VEC_VERSION} && \
 
 FROM debian:bookworm-slim
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates libsqlite3-0 wget passwd && \
+    apt-get install -y --no-install-recommends ca-certificates libsqlite3-0 sqlite3 wget passwd && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 1000 pocketbase && \
     useradd --system --uid 1000 --gid 1000 --home /pb --create-home pocketbase && \
