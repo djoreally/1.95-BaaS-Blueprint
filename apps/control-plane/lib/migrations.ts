@@ -23,14 +23,44 @@ export async function createMigration(userId: string, slug: string, manifestInpu
   assertMigrationManifest(manifestInput);
   const manifest = manifestInput as MigrationManifest;
   const plan = compileMigrationPlan(manifest);
-  return prisma.migrationJob.create({ data: { userId, slug, sourceProvider: manifest.source.provider, status: 'planned', manifest: json(manifest), plan: json(plan), progress: json({ expectedRows: plan.collections.reduce((n, c) => n + (c.expectedRows ?? 0), 0), importedRows: 0 }) } });
+  const exactExpected = plan.collections.every((c) => c.expectedRows !== null);
+  return prisma.migrationJob.create({
+    data: {
+      userId,
+      slug,
+      sourceProvider: manifest.source.provider,
+      status: 'planned',
+      manifest: json(manifest),
+      plan: json(plan),
+      progress: json({
+        expectedRows: exactExpected ? plan.collections.reduce((n, c) => n + (c.expectedRows ?? 0), 0) : null,
+        exactSourceCounts: exactExpected,
+        importedRows: 0,
+      }),
+    },
+  });
 }
 
 export async function queueMigrationSnapshot(userId: string, slug: string, id: string) {
   const job = await ownedJob(userId, slug, id);
   if (!['planned', 'failed'].includes(job.status)) return job;
   const command = await prisma.runtimeCommand.create({ data: { userId, slug, kind: 'backup', payload: json({ reason: 'pre-migration', migrationId: id }) } });
-  return prisma.migrationJob.update({ where: { id }, data: { status: 'snapshotting', startedAt: job.startedAt ?? new Date(), error: null, progress: json({ ...((job.progress as JsonObject | null) ?? {}), snapshotCommandId: command.id }) } });
+  return prisma.migrationJob.update({
+    where: { id },
+    data: {
+      status: 'snapshotting',
+      startedAt: job.startedAt ?? new Date(),
+      error: null,
+      progress: json({ ...((job.progress as JsonObject | null) ?? {}), snapshotCommandId: command.id }),
+    },
+  });
+}
+
+function backupFilename(slug: string, result: Prisma.JsonValue | null): string | null {
+  if (!result) return null;
+  const text = JSON.stringify(result);
+  const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.match(new RegExp(`${escaped}-\\d{4}-\\d{2}-\\d{2}-\\d{6}\\.db\\.gz`))?.[0] ?? null;
 }
 
 function pbField(field: DestinationCollection['fields'][number], collectionIds: Map<string, string>) {
@@ -49,35 +79,57 @@ export async function prepareMigration(userId: string, slug: string, id: string)
   const job = await ownedJob(userId, slug, id);
   if (!['snapshotting', 'planned', 'failed'].includes(job.status)) return job;
   const plan = asPlan(job.plan);
-  const progress = (job.progress ?? {}) as JsonObject;
+  let progress = (job.progress ?? {}) as JsonObject;
   const snapshotCommandId = typeof progress.snapshotCommandId === 'string' ? progress.snapshotCommandId : null;
   if (snapshotCommandId) {
     const command = await prisma.runtimeCommand.findUnique({ where: { id: snapshotCommandId } });
     if (!command || !['done', 'failed'].includes(command.status)) throw new Error('destination backup is still running');
     if (command.status === 'failed') throw new Error('destination backup failed; migration has not modified schema');
+    const preMigrationBackup = backupFilename(slug, command.result);
+    if (!preMigrationBackup) throw new Error('destination backup completed but its restorable filename could not be verified');
+    progress = { ...progress, preMigrationBackup };
+  } else {
+    throw new Error('pre-migration snapshot evidence is required before schema mutation');
   }
 
   const existing = await instanceRequest<{ items?: Array<{ id: string; name: string }> }>(userId, slug, 'GET', '/api/collections', undefined, { page: '1', perPage: '200' });
   const collectionIds = new Map((existing.items ?? []).map((c) => [c.name, c.id]));
+
   for (const collection of plan.collections) {
     if (collectionIds.has(collection.name)) continue;
     const created = await instanceRequest<{ id: string; name: string }>(userId, slug, 'POST', '/api/collections', {
       name: collection.name,
       type: collection.type,
       fields: collection.fields.filter((f) => !f.system && f.type !== 'relation').map((f) => pbField(f, collectionIds)),
-      listRule: collection.rules.list, viewRule: collection.rules.view, createRule: collection.rules.create, updateRule: collection.rules.update, deleteRule: collection.rules.delete,
+      listRule: collection.rules.list,
+      viewRule: collection.rules.view,
+      createRule: collection.rules.create,
+      updateRule: collection.rules.update,
+      deleteRule: collection.rules.delete,
     });
     collectionIds.set(collection.name, created.id);
   }
+
   for (const collection of plan.collections) {
     if (!collection.fields.some((f) => !f.system && f.type === 'relation')) continue;
     const collectionId = collectionIds.get(collection.name)!;
     await instanceRequest(userId, slug, 'PATCH', `/api/collections/${collectionId}`, {
       fields: collection.fields.filter((f) => !f.system).map((f) => pbField(f, collectionIds)),
-      listRule: collection.rules.list, viewRule: collection.rules.view, createRule: collection.rules.create, updateRule: collection.rules.update, deleteRule: collection.rules.delete,
+      listRule: collection.rules.list,
+      viewRule: collection.rules.view,
+      createRule: collection.rules.create,
+      updateRule: collection.rules.update,
+      deleteRule: collection.rules.delete,
     });
   }
-  return prisma.migrationJob.update({ where: { id }, data: { status: 'schema_ready', progress: json({ ...progress, schemaPreparedAt: new Date().toISOString(), cutoverBlockedBy: plan.blockers }) } });
+
+  return prisma.migrationJob.update({
+    where: { id },
+    data: {
+      status: 'schema_ready',
+      progress: json({ ...progress, schemaPreparedAt: new Date().toISOString(), cutoverBlockedBy: plan.blockers }),
+    },
+  });
 }
 
 function transformRecord(collection: DestinationCollection, record: JsonObject): JsonObject {
@@ -89,10 +141,18 @@ function transformRecord(collection: DestinationCollection, record: JsonObject):
     const original = record[field.sourceName];
     if (original == null) { if (!field.required) out[field.name] = null; continue; }
     if (field.type === 'relation' && field.relation) out[field.name] = destinationId(field.relation.sourceTable, original);
-    else if (field.type === 'date') out[field.name] = new Date(String(original)).toISOString();
-    else out[field.name] = original;
+    else if (field.type === 'date') {
+      const parsed = new Date(String(original));
+      if (Number.isNaN(parsed.getTime())) throw new Error(`${collection.sourceTable}.${field.sourceName}: invalid date value`);
+      out[field.name] = parsed.toISOString();
+    } else out[field.name] = original;
   }
   return out;
+}
+
+function isDuplicateError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b409\b|already exists|duplicate|unique constraint|unique field/i.test(message);
 }
 
 async function upsertRecord(userId: string, slug: string, collection: DestinationCollection, record: JsonObject) {
@@ -100,8 +160,7 @@ async function upsertRecord(userId: string, slug: string, collection: Destinatio
   try {
     await instanceRequest(userId, slug, 'POST', `/api/collections/${collection.name}/records`, record);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/400|409|already exists|unique/i.test(message)) throw error;
+    if (!isDuplicateError(error)) throw error;
     const patch = { ...record }; delete patch.id;
     await instanceRequest(userId, slug, 'PATCH', `/api/collections/${collection.name}/records/${recordId}`, patch);
   }
@@ -162,6 +221,9 @@ export async function importAuthBatch(userId: string, slug: string, id: string, 
   try {
     for (const source of input.users) {
       const transformed = transformRecord(collection, source);
+      if (!transformed.email && typeof source.email === 'string') transformed.email = source.email;
+      const confirmed = source.verified === true || Boolean(source.email_confirmed_at) || Boolean(source.confirmed_at);
+      if (confirmed) transformed.verified = true;
       const password = randomBytes(24).toString('base64url');
       transformed.password = password;
       transformed.passwordConfirm = password;
@@ -207,17 +269,52 @@ export async function importMigrationFile(userId: string, slug: string, id: stri
   return { ok: true, sha256: digest, bytes: bytes.byteLength, result };
 }
 
+async function destinationCount(userId: string, slug: string, collection: string): Promise<number> {
+  const result = await instanceRequest<{ totalItems?: number }>(userId, slug, 'GET', `/api/collections/${collection}/records`, undefined, { page: '1', perPage: '1' });
+  return Number(result.totalItems ?? 0);
+}
+
 export async function verifyMigration(userId: string, slug: string, id: string) {
   const job = await ownedJob(userId, slug, id);
   const plan = asPlan(job.plan);
   const failed = job.batches.filter((b) => b.status === 'failed');
   const byCollection = new Map<string, number>();
   for (const batch of job.batches.filter((b) => b.status === 'done')) byCollection.set(batch.collection, (byCollection.get(batch.collection) ?? 0) + batch.imported);
-  const checks = plan.collections.map((c) => ({ collection: c.name, expected: c.expectedRows, imported: byCollection.get(c.name) ?? 0, exact: c.expectedRows == null ? true : c.expectedRows === (byCollection.get(c.name) ?? 0) }));
+
+  const checks = [] as Array<{ collection: string; expected: number | null; imported: number; destination: number; exact: boolean; evidenceComplete: boolean }>;
+  for (const collection of plan.collections) {
+    const imported = byCollection.get(collection.name) ?? 0;
+    const destination = await destinationCount(userId, slug, collection.name);
+    const evidenceComplete = collection.expectedRows !== null;
+    checks.push({
+      collection: collection.name,
+      expected: collection.expectedRows,
+      imported,
+      destination,
+      exact: evidenceComplete && collection.expectedRows === imported && collection.expectedRows === destination,
+      evidenceComplete,
+    });
+  }
+
   const dataExact = checks.every((c) => c.exact) && failed.length === 0;
-  const state = dataExact && plan.blockers.length === 0 ? 'VERIFIED' : dataExact ? 'PARTIAL' : 'FAILED';
-  const verification = { state, checkedAt: new Date().toISOString(), checks, failedBatches: failed.map((b) => b.batchKey), blockers: plan.blockers };
-  return prisma.migrationJob.update({ where: { id }, data: { status: state === 'VERIFIED' ? 'verified' : state === 'PARTIAL' ? 'staged' : 'failed', verification: json(verification), error: state === 'FAILED' ? 'migration verification failed' : null } });
+  const missingSourceCounts = checks.filter((c) => !c.evidenceComplete).map((c) => c.collection);
+  const state = dataExact && plan.blockers.length === 0 ? 'VERIFIED' : failed.length || checks.some((c) => c.evidenceComplete && !c.exact) ? 'FAILED' : 'PARTIAL';
+  const verification = {
+    state,
+    checkedAt: new Date().toISOString(),
+    checks,
+    failedBatches: failed.map((b) => b.batchKey),
+    unresolvedBlockers: plan.blockers,
+    missingExactSourceCounts: missingSourceCounts,
+  };
+  return prisma.migrationJob.update({
+    where: { id },
+    data: {
+      status: state === 'VERIFIED' ? 'verified' : state === 'PARTIAL' ? 'staged' : 'failed',
+      verification: json(verification),
+      error: state === 'FAILED' ? 'migration verification failed' : null,
+    },
+  });
 }
 
 export async function cutoverMigration(userId: string, slug: string, id: string) {
@@ -225,18 +322,31 @@ export async function cutoverMigration(userId: string, slug: string, id: string)
   const verification = job.verification as JsonObject | null;
   if (!verification || verification.state !== 'VERIFIED' || job.status !== 'verified') throw new Error('cutover requires VERIFIED migration evidence');
   const baseDomain = process.env.IDB_BASE_DOMAIN || 'invisibledb.app';
-  const result = { baseUrl: `https://${slug}.${baseDomain}`, env: { INVISIBLED_BASE_URL: `https://${slug}.${baseDomain}` }, instructions: ['Replace source backend environment variables with the InvisibleDB endpoint/key.', 'Switch application reads/writes only after smoke tests pass.', 'Keep the source backend read-only during the rollback window.'] };
-  const updated = await prisma.migrationJob.update({ where: { id }, data: { status: 'cutover', completedAt: new Date(), progress: json({ ...((job.progress as JsonObject | null) ?? {}), cutover: result }) } });
+  const result = {
+    baseUrl: `https://${slug}.${baseDomain}`,
+    env: { INVISIBLED_BASE_URL: `https://${slug}.${baseDomain}` },
+    instructions: [
+      'Replace source backend environment variables with the InvisibleDB endpoint/key.',
+      'Switch application reads/writes only after smoke tests pass.',
+      'Keep the source backend read-only during the rollback window.',
+    ],
+  };
+  const updated = await prisma.migrationJob.update({
+    where: { id },
+    data: { status: 'cutover', completedAt: new Date(), progress: json({ ...((job.progress as JsonObject | null) ?? {}), cutover: result }) },
+  });
   return { job: updated, cutover: result };
 }
 
 export async function rollbackMigration(userId: string, slug: string, id: string, backup?: string) {
   const job = await ownedJob(userId, slug, id);
-  if (!backup) throw new Error('rollback requires the pre-migration backup filename returned by the runtime backup command');
-  if (!new RegExp(`^${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{4}-\\d{2}-\\d{2}[^/]*\\.db\\.gz$`).test(backup)) throw new Error('invalid backup filename');
-  const command = await prisma.runtimeCommand.create({ data: { userId, slug, kind: 'restore', payload: json({ backup, reason: 'migration-rollback', migrationId: id }) } });
-  const updated = await prisma.migrationJob.update({ where: { id }, data: { status: 'rolling_back', progress: json({ ...((job.progress as JsonObject | null) ?? {}), rollbackCommandId: command.id }) } });
-  return { job: updated, commandId: command.id };
+  const progress = ((job.progress as JsonObject | null) ?? {});
+  const chosen = backup || (typeof progress.preMigrationBackup === 'string' ? progress.preMigrationBackup : undefined);
+  if (!chosen) throw new Error('rollback requires pre-migration backup evidence');
+  if (!new RegExp(`^${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{4}-\\d{2}-\\d{2}-\\d{6}\\.db\\.gz$`).test(chosen)) throw new Error('invalid backup filename');
+  const command = await prisma.runtimeCommand.create({ data: { userId, slug, kind: 'restore', payload: json({ backup: chosen, reason: 'migration-rollback', migrationId: id }) } });
+  const updated = await prisma.migrationJob.update({ where: { id }, data: { status: 'rolling_back', progress: json({ ...progress, rollbackCommandId: command.id, rollbackBackup: chosen }) } });
+  return { job: updated, commandId: command.id, backup: chosen };
 }
 
 export async function migrationStatus(userId: string, slug: string, id?: string) {
