@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Apply the non-destructive InvisibleDB P0 hardening prerequisites on a live VPS.
+# This script does not delete tenant containers or data volumes. It prepares the
+# trusted edge secret, rewrites Caddy tenant routes, and restarts only Caddy and
+# the gateway. Run bin/upgrade-runtime afterward to recreate tenant containers
+# onto dedicated networks with least-privilege flags.
+set -euo pipefail
+umask 077
+
+IDB_ROOT="${IDB_ROOT:-/srv/idb}"
+ENV_FILE="$IDB_ROOT/.env"
+cd "$IDB_ROOT"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "missing $ENV_FILE" >&2
+  exit 1
+fi
+
+if ! grep -q '^EDGE_SECRET=' "$ENV_FILE"; then
+  EDGE_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  printf '\nEDGE_SECRET=%s\n' "$EDGE_SECRET" >> "$ENV_FILE"
+  echo "generated EDGE_SECRET"
+fi
+chmod 600 "$ENV_FILE"
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+: "${EDGE_SECRET:?EDGE_SECRET missing from .env}"
+if [[ ${#EDGE_SECRET} -lt 32 ]]; then
+  echo "EDGE_SECRET must be at least 32 characters" >&2
+  exit 1
+fi
+
+mkdir -p "$IDB_ROOT/keys" "$IDB_ROOT/backups" "$IDB_ROOT/caddy/sites"
+chmod 700 "$IDB_ROOT/keys" "$IDB_ROOT/backups"
+find "$IDB_ROOT/keys" -maxdepth 1 -type f -exec chmod 600 {} + 2>/dev/null || true
+find "$IDB_ROOT/backups" -maxdepth 1 -type f -exec chmod 600 {} + 2>/dev/null || true
+
+# Existing generated routes are deterministic: <slug>.caddy => <slug>.$BASE_DOMAIN.
+# Rebuild them so every request from Caddy to the gateway carries the internal
+# edge credential. The literal Caddy env placeholder must remain in the file.
+for site in "$IDB_ROOT"/caddy/sites/*.caddy; do
+  [[ -e "$site" ]] || continue
+  slug="$(basename "$site" .caddy)"
+  if [[ ! "$slug" =~ ^[a-z0-9-]+$ ]]; then
+    echo "skip unexpected Caddy site filename: $site" >&2
+    continue
+  fi
+  cat > "$site" <<EOF
+$slug.$BASE_DOMAIN {
+	reverse_proxy gateway:8080 {
+		header_up X-IDB-Edge-Secret {\$EDGE_SECRET}
+	}
+}
+EOF
+done
+
+# Recreate only edge services. Tenant data containers remain running here.
+docker compose build gateway
+docker compose up -d gateway caddy
+
+GATEWAY_ID="$(docker compose ps -q gateway)"
+if [[ -z "$GATEWAY_ID" ]]; then
+  echo "gateway failed to start" >&2
+  exit 1
+fi
+
+if ! docker exec "$GATEWAY_ID" wget -q -O - http://localhost:8080/healthz >/dev/null; then
+  echo "gateway health check failed" >&2
+  docker logs --tail 100 "$GATEWAY_ID" >&2 || true
+  exit 1
+fi
+
+docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+
+echo "P0 edge prerequisites applied"
+echo "next: $IDB_ROOT/bin/upgrade-runtime"
