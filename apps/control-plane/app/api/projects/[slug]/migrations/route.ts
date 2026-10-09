@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { currentUser } from '../../../../../lib/auth';
 import { prisma } from '../../../../../lib/db';
 import { compileMigrationPlan, assertMigrationManifest } from '../../../../../lib/migration-manifest';
-import { createMigration, cutoverMigration, importAuthBatch, importMigrationBatch, importMigrationFile, migrationStatus, queueMigrationSnapshot, rollbackMigration, verifyMigration } from '../../../../../lib/migrations';
+import { createMigration, cutoverMigration, importAuthBatch, importMigrationBatch, importMigrationFile, migrationStatus, queueMigrationSnapshot, rollbackMigration } from '../../../../../lib/migrations';
 import { prepareMigrationWithIndexes } from '../../../../../lib/migration-indexes';
 import { resolveMigrationBlocker } from '../../../../../lib/migration-resolutions';
+import { verifyMigrationStrict } from '../../../../../lib/migration-verification';
 
 async function owns(userId: string, slug: string) { return prisma.provisionRequest.findFirst({ where: { userId, slug, kind: 'provision', status: 'done' }, orderBy: { createdAt: 'desc' } }); }
 function fail(error: unknown) { return NextResponse.json({ error: error instanceof Error ? error.message : 'migration request failed' }, { status: 400 }); }
@@ -29,7 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       case 'auth_batch': return NextResponse.json(await importAuthBatch(user.id, slug, String(body.migrationId || ''), { batchKey: String(body.batchKey || ''), collection: body.collection, users: body.users }));
       case 'file': return NextResponse.json(await importMigrationFile(user.id, slug, String(body.migrationId || ''), { collection: String(body.collection || ''), sourceRecordId: String(body.sourceRecordId || ''), field: String(body.field || ''), filename: String(body.filename || ''), sourceUrl: String(body.sourceUrl || ''), expectedSha256: body.expectedSha256 }));
       case 'resolve': return NextResponse.json(await resolveMigrationBlocker(user.id, slug, String(body.migrationId || ''), String(body.blocker || ''), String(body.evidence || '')));
-      case 'verify': return NextResponse.json(await verifyMigration(user.id, slug, String(body.migrationId || '')));
+      case 'verify': return NextResponse.json(await verifyMigrationStrict(user.id, slug, String(body.migrationId || '')));
       case 'cutover': return NextResponse.json(await cutoverMigration(user.id, slug, String(body.migrationId || '')));
       case 'rollback': return NextResponse.json(await rollbackMigration(user.id, slug, String(body.migrationId || ''), body.backup));
       default: return NextResponse.json({ error: 'unsupported migration action' }, { status: 400 });
