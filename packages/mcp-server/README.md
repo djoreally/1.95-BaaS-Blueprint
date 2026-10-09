@@ -1,38 +1,43 @@
 # @baas-195/mcp-server
 
-InvisibleDB MCP server — provision and manage agent-native backends from any
-MCP client (Claude Code, Claude Desktop, or your own agent). Stdio transport.
+InvisibleDB MCP server for Claude Code, Claude Desktop, ChatGPT-compatible MCP clients, and custom agents. The control plane now exposes a real bearer-key API; the MCP is not a stub-only surface.
 
-## Tools
+## Core tools
 
-| Tool | Purpose |
-|---|---|
-| `idb_provision` | Provision a new backend instance (`name`, optional `domain`, `plan`) |
-| `idb_list` | List instances with status |
-| `idb_keys` | API keys + Dart/curl snippets for an instance (secret — don't log it) |
-| `idb_query` | Query a PocketBase collection (`instance`, `collection`, `filter`) |
-| `idb_gate_check` | ZeroAI lifecycle gate check — returns evidence and an honest state |
+`idb_provision`, `idb_list`, `idb_keys`, `idb_query`, `idb_gate_check`, `idb_status`.
 
-Gate states follow the evidence rule: `passed`, `failed`, or `unknown`.
-No evidence = `unknown`, never success.
+## Migration tools
+
+- `idb_migration_manifest_spec` — neutral manifest shape + read-only Lovable/Supabase/Postgres discovery SQL
+- `idb_migration_plan` — compile compatibility plan without mutation
+- `idb_migration_create` — persist reviewed plan/manifest
+- `idb_migration_start` — queue destination snapshot
+- `idb_migration_prepare` — create collections/relations after snapshot
+- `idb_migration_batch` — idempotent 1-500 row ETL batches
+- `idb_migration_auth_batch` — auth identity migration with honest password-reset semantics
+- `idb_migration_file` — server-to-server signed-URL storage transfer
+- `idb_migration_verify` — exact count/failed-batch/blocker evidence
+- `idb_migration_cutover` — blocked unless evidence is VERIFIED
+- `idb_migration_rollback` — restore pre-migration backup
+- `idb_migration_status` — inspect resumable job/batch state
+
+The intended Lovable flow is: connect the Lovable MCP and InvisibleDB MCP to the same agent; call `idb_migration_manifest_spec`; let the agent run the returned read-only SQL on Lovable; build the manifest; plan; then execute the staged migration. The LLM never moves large file bytes and never receives database owner credentials.
 
 ## Setup
+
+Create a control-plane API key from InvisibleDB account settings/API keys. The token is shown once.
 
 ```bash
 npm install
 npm run build
 ```
 
-The server reads its config from the environment:
+Environment:
 
-- `INVISIBLED_API_URL` — control plane base URL, e.g. `https://baas.innovarel.dev`
-- `INVISIBLED_API_KEY` — your InvisibleDB API key
+- `INVISIBLED_API_URL=https://www.invisibledb.app`
+- `INVISIBLED_API_KEY=idb_sk_...`
 
-Without them it fails loudly (`NoTransportError`) instead of pretending to work.
-
-## Claude Code
-
-Add to your project's `.mcp.json`:
+Claude Code `.mcp.json`:
 
 ```json
 {
@@ -41,46 +46,14 @@ Add to your project's `.mcp.json`:
       "command": "node",
       "args": ["/absolute/path/to/packages/mcp-server/dist/index.js"],
       "env": {
-        "INVISIBLED_API_URL": "https://baas.innovarel.dev",
-        "INVISIBLED_API_KEY": "<your-key>"
+        "INVISIBLED_API_URL": "https://www.invisibledb.app",
+        "INVISIBLED_API_KEY": "<your idb_sk key>"
       }
     }
   }
 }
 ```
 
-## Claude Desktop
+## Evidence rule
 
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "invisibledb": {
-      "command": "node",
-      "args": ["/absolute/path/to/packages/mcp-server/dist/index.js"],
-      "env": {
-        "INVISIBLED_API_URL": "https://baas.innovarel.dev",
-        "INVISIBLED_API_KEY": "<your-key>"
-      }
-    }
-  }
-}
-```
-
-## Architecture
-
-All tools program against `InvisibleDBClient` (`src/client.ts`) — a typed
-interface over the control plane REST API. The HTTP layer is a swappable
-`HttpTransport`:
-
-- `stubTransport()` — fails loudly until configured (default)
-- `fetchTransport(baseUrl, apiKey)` — real fetch transport, ready when the API lands
-- `fakeTransport(seed?)` — deterministic in-memory fake for tests
-
-`src/tools.ts` holds pure handler functions (unit-tested); `src/index.ts`
-only wires them to the MCP server.
-
-## License
-
-Apache-2.0
+Provisioning is not READY until status says ready. Migration is not safe to cut over until verification says `VERIFIED`. `PARTIAL`, `FAILED`, and `UNKNOWN` block cutover.
