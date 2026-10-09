@@ -3,7 +3,7 @@
 # route, credentials and isolated tenant network. Data volume is retained unless
 # --drop-data is explicitly supplied.
 # Usage: deprovision <slug> [--drop-data]
-set -euo pipefail
+set -Eeuo pipefail
 
 IDB_ROOT="${IDB_ROOT:-/srv/idb}"
 SLUG="${1:?usage: deprovision <slug> [--drop-data>}"
@@ -20,6 +20,11 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 rm -f "$IDB_ROOT/caddy/sites/$SLUG.caddy"
 rm -f "$IDB_ROOT/keys/$SLUG.key" "$IDB_ROOT/keys/$SLUG.admin"
 docker compose -f "$IDB_ROOT/docker-compose.yml" exec caddy caddy reload >/dev/null 2>&1 || true
+
+GATEWAY_ID="$(docker compose -f "$IDB_ROOT/docker-compose.yml" ps -q gateway 2>/dev/null || true)"
+if [[ -n "$GATEWAY_ID" ]] && docker network inspect "$NET" >/dev/null 2>&1; then
+  docker network disconnect -f "$NET" "$GATEWAY_ID" >/dev/null 2>&1 || true
+fi
 docker network rm "$NET" >/dev/null 2>&1 || true
 
 if [[ "$DROP" == "--drop-data" ]]; then
