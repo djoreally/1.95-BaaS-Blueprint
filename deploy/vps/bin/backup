@@ -16,7 +16,11 @@ mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
 backup_one() {
-  local slug="$1" name="idb-$1" volume="$name-data"
+  local slug name volume
+  slug="$1"
+  name="idb-$slug"
+  volume="$name-data"
+
   local stamp out
   stamp="$(date -u +%F-%H%M%S)"
   out="$slug-$stamp.db"
