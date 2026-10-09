@@ -48,17 +48,18 @@ backup_one() {
   }
   trap cleanup RETURN
 
-  # Write the snapshot into the helper container's own writable /tmp first.
-  # This avoids host bind-mount permission/readonly behavior during SQLite .backup.
+  # Open the live source explicitly read-only. This prevents SQLite from trying
+  # to mutate the live database/journal while PocketBase has it open. The
+  # snapshot itself is written into the helper's writable /tmp.
   docker run --name "$helper" \
     --user 0:0 \
     --network none \
     --cap-drop ALL \
     --security-opt no-new-privileges:true \
     --entrypoint sqlite3 \
-    -v "$volume:/pb/data" \
+    -v "$volume:/pb/data:ro" \
     "$BACKUP_IMAGE" \
-    /pb/data/data.db ".backup '/tmp/$out'" >/dev/null
+    'file:/pb/data/data.db?mode=ro' ".backup '/tmp/$out'" >/dev/null
 
   docker cp "$helper:/tmp/$out" "$BACKUP_DIR/$out" >/dev/null
   chmod 600 "$BACKUP_DIR/$out"
@@ -72,7 +73,7 @@ backup_one() {
     --entrypoint sqlite3 \
     -v "$BACKUP_DIR/$out:/backup.db:ro" \
     "$BACKUP_IMAGE" \
-    /backup.db 'PRAGMA integrity_check;' 2>/dev/null || true)"
+    'file:/backup.db?mode=ro' 'PRAGMA integrity_check;' 2>/dev/null || true)"
   if [[ "$integrity" != "ok" ]]; then
     rm -f "$BACKUP_DIR/$out"
     echo "backup integrity check failed for $slug: ${integrity:-no result}" >&2
