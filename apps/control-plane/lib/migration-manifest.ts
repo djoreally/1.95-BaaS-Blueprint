@@ -49,9 +49,7 @@ export interface MigrationManifest {
     passwordHashExportable?: boolean;
     userTable?: string;
   };
-  storage?: {
-    buckets: Array<{ name: string; objectsCount?: number; bytes?: number }>;
-  };
+  storage?: { buckets: Array<{ name: string; objectsCount?: number; bytes?: number }> };
   functions?: Array<{ name: string; language?: string; definition?: string }>;
   realtime?: Array<{ table: string; events?: string[] }>;
   extensions?: string[];
@@ -62,9 +60,11 @@ export type DestinationFieldType = 'text' | 'number' | 'bool' | 'date' | 'json' 
 
 export interface DestinationField {
   name: string;
+  sourceName: string;
   type: DestinationFieldType;
   required: boolean;
   sourceType: string;
+  system?: boolean;
   options?: Record<string, unknown>;
   relation?: { collection: string; sourceColumn: string; sourceTable: string };
 }
@@ -89,15 +89,11 @@ export interface MigrationPlan {
   steps: Array<{ id: string; title: string; automatic: boolean; detail: string }>;
 }
 
-const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
 export function assertMigrationManifest(input: unknown): asserts input is MigrationManifest {
   if (!input || typeof input !== 'object') throw new Error('manifest must be an object');
   const m = input as Partial<MigrationManifest>;
   if (m.version !== '1.0') throw new Error('manifest.version must be 1.0');
-  if (!m.source || typeof m.source !== 'object' || !m.source.provider || !m.source.engine || !m.source.capturedAt) {
-    throw new Error('manifest.source is incomplete');
-  }
+  if (!m.source || typeof m.source !== 'object' || !m.source.provider || !m.source.engine || !m.source.capturedAt) throw new Error('manifest.source is incomplete');
   if (!Array.isArray(m.tables)) throw new Error('manifest.tables must be an array');
   const names = new Set<string>();
   for (const table of m.tables) {
@@ -124,14 +120,15 @@ function safeName(value: string): string {
 function mapType(column: SourceColumn): DestinationField {
   const t = column.sourceType.toLowerCase().replace(/\s+/g, ' ');
   const required = column.nullable === false && column.default == null;
-  if (column.enumValues?.length) return { name: safeName(column.name), type: 'select', required, sourceType: column.sourceType, options: { values: column.enumValues, maxSelect: 1 } };
-  if (/bool/.test(t)) return { name: safeName(column.name), type: 'bool', required, sourceType: column.sourceType };
-  if (/(smallint|integer|bigint|serial|numeric|decimal|real|double|money)/.test(t)) return { name: safeName(column.name), type: 'number', required, sourceType: column.sourceType };
-  if (/(timestamp|date|time)/.test(t)) return { name: safeName(column.name), type: 'date', required, sourceType: column.sourceType };
-  if (/(json|jsonb|array|\[\])/.test(t)) return { name: safeName(column.name), type: 'json', required, sourceType: column.sourceType };
-  if (/email/.test(column.name.toLowerCase())) return { name: safeName(column.name), type: 'email', required, sourceType: column.sourceType };
-  if (/url/.test(column.name.toLowerCase())) return { name: safeName(column.name), type: 'url', required, sourceType: column.sourceType };
-  return { name: safeName(column.name), type: 'text', required, sourceType: column.sourceType };
+  const base = { name: safeName(column.name), sourceName: column.name, required, sourceType: column.sourceType };
+  if (column.enumValues?.length) return { ...base, type: 'select', options: { values: column.enumValues, maxSelect: 1 } };
+  if (/bool/.test(t)) return { ...base, type: 'bool' };
+  if (/(smallint|integer|bigint|serial|numeric|decimal|real|double|money)/.test(t)) return { ...base, type: 'number' };
+  if (/(timestamp|date|time)/.test(t)) return { ...base, type: 'date' };
+  if (/(json|jsonb|array|\[\])/.test(t)) return { ...base, type: 'json' };
+  if (/email/.test(column.name.toLowerCase())) return { ...base, type: 'email' };
+  if (/url/.test(column.name.toLowerCase())) return { ...base, type: 'url' };
+  return { ...base, type: 'text' };
 }
 
 function cleanPolicy(expr: string): string {
@@ -142,8 +139,7 @@ export function translatePolicy(expression: string | null | undefined, fieldMap:
   if (!expression) return { rule: null, supported: true };
   let e = cleanPolicy(expression).replace(/^\((.*)\)$/s, '$1').trim();
   if (/^(true|TRUE)$/.test(e)) return { rule: '', supported: true };
-  e = e.replace(/auth\.uid\(\)/gi, '@request.auth.id');
-  e = e.replace(/auth\.role\(\)/gi, '@request.auth.role');
+  e = e.replace(/auth\.uid\(\)/gi, '@request.auth.id').replace(/auth\.role\(\)/gi, '@request.auth.role');
   e = e.replace(/\bAND\b/gi, '&&').replace(/\bOR\b/gi, '||');
   e = e.replace(/\bIS NOT NULL\b/gi, '!= null').replace(/\bIS NULL\b/gi, '= null');
   for (const [source, dest] of fieldMap) e = e.replace(new RegExp(`\\b${source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), dest);
@@ -159,22 +155,27 @@ export function compileMigrationPlan(manifest: MigrationManifest): MigrationPlan
   const authSource = manifest.auth?.userTable;
 
   const collections: DestinationCollection[] = manifest.tables.map((table) => {
+    const isAuth = authSource === table.name;
     const fieldMap = new Map(table.columns.map((c) => [c.name, safeName(c.name)]));
     const pk = table.primaryKey?.[0] ?? table.columns.find((c) => c.name === 'id')?.name ?? table.columns[0].name;
     if ((table.primaryKey?.length ?? 0) > 1) warnings.push(`${table.name}: composite primary key will be deterministically folded into one PocketBase id`);
-    let fields = table.columns.filter((c) => c.name !== pk).map(mapType);
-    fields.push({ name: '_source_id', type: 'text', required: true, sourceType: 'migration-identity' });
+
+    const sensitiveAuth = /^(encrypted_password|password_hash|passwd|password_digest)$/i;
+    let fields = table.columns
+      .filter((c) => c.name !== pk && !(isAuth && sensitiveAuth.test(c.name)))
+      .map(mapType)
+      .map((f) => isAuth && /^(email|verified)$/i.test(f.name) ? { ...f, system: true } : f);
+    if (isAuth && table.columns.some((c) => sensitiveAuth.test(c.name))) warnings.push(`${table.name}: source password hashes are intentionally not copied into destination fields`);
+    fields.push({ name: '_source_id', sourceName: pk, type: 'text', required: true, sourceType: 'migration-identity' });
+    if (isAuth) fields.push({ name: 'migration_reset_required', sourceName: '__migration_reset_required', type: 'bool', required: false, sourceType: 'migration-auth-state' });
 
     for (const fk of table.foreignKeys ?? []) {
-      const idx = fields.findIndex((f) => f.name === safeName(fk.column));
+      const idx = fields.findIndex((f) => f.sourceName === fk.column);
       if (idx < 0) continue;
       const target = tableNames.get(fk.referencesTable);
-      if (!target) {
-        blockers.push(`${table.name}.${fk.column}: referenced table ${fk.referencesTable} is missing from the manifest`);
-        continue;
-      }
+      if (!target) { blockers.push(`${table.name}.${fk.column}: referenced table ${fk.referencesTable} is missing from the manifest`); continue; }
       fields[idx] = {
-        name: safeName(fk.column), type: 'relation', required: table.columns.find((c) => c.name === fk.column)?.nullable === false,
+        name: safeName(fk.column), sourceName: fk.column, type: 'relation', required: table.columns.find((c) => c.name === fk.column)?.nullable === false,
         sourceType: table.columns.find((c) => c.name === fk.column)?.sourceType ?? 'relation',
         relation: { collection: target, sourceColumn: fk.referencesColumn, sourceTable: fk.referencesTable },
       };
@@ -183,31 +184,18 @@ export function compileMigrationPlan(manifest: MigrationManifest): MigrationPlan
     const rules = { list: null as string | null, view: null as string | null, create: null as string | null, update: null as string | null, delete: null as string | null };
     for (const policy of table.policies ?? []) {
       const translated = translatePolicy(policy.using ?? policy.check, fieldMap);
-      if (!translated.supported) {
-        blockers.push(`${table.name}: RLS policy "${policy.name}" requires manual translation`);
-        continue;
-      }
+      if (!translated.supported) { blockers.push(`${table.name}: RLS policy "${policy.name}" requires manual translation`); continue; }
       const command = (policy.command || 'ALL').toUpperCase();
       if (command === 'SELECT' || command === 'ALL') { rules.list = translated.rule; rules.view = translated.rule; }
       if (command === 'INSERT' || command === 'ALL') rules.create = translated.rule;
       if (command === 'UPDATE' || command === 'ALL') rules.update = translated.rule;
       if (command === 'DELETE' || command === 'ALL') rules.delete = translated.rule;
     }
-    if ((table.triggers?.length ?? 0) > 0) {
-      for (const trigger of table.triggers ?? []) {
-        if (!/updated_at|set.*timestamp|moddatetime/i.test(`${trigger.name} ${trigger.definition ?? ''}`)) blockers.push(`${table.name}: trigger "${trigger.name}" requires application/server translation`);
-        else warnings.push(`${table.name}: trigger "${trigger.name}" maps to automatic updated timestamp behavior`);
-      }
+    for (const trigger of table.triggers ?? []) {
+      if (!/updated_at|set.*timestamp|moddatetime/i.test(`${trigger.name} ${trigger.definition ?? ''}`)) blockers.push(`${table.name}: trigger "${trigger.name}" requires application/server translation`);
+      else warnings.push(`${table.name}: trigger "${trigger.name}" maps to automatic updated timestamp behavior`);
     }
-    return {
-      sourceTable: table.name,
-      name: tableNames.get(table.name)!,
-      type: authSource === table.name ? 'auth' : 'base',
-      primaryKey: pk,
-      fields,
-      rules,
-      expectedRows: Number.isFinite(table.rowCount) ? Number(table.rowCount) : null,
-    };
+    return { sourceTable: table.name, name: tableNames.get(table.name)!, type: isAuth ? 'auth' : 'base', primaryKey: pk, fields, rules, expectedRows: Number.isFinite(table.rowCount) ? Number(table.rowCount) : null };
   });
 
   for (const ext of manifest.extensions ?? []) {
@@ -216,25 +204,20 @@ export function compileMigrationPlan(manifest: MigrationManifest): MigrationPlan
     else if (['uuid-ossp', 'pgcrypto'].includes(e)) warnings.push(`${ext}: UUID/crypto generation moves to the application/runtime layer`);
     else blockers.push(`Postgres extension ${ext} has no automatic InvisibleDB translation`);
   }
-  if ((manifest.functions?.length ?? 0) > 0) blockers.push(`${manifest.functions!.length} database/edge function(s) require a server-side rewrite; data migration can still proceed`);
+  if ((manifest.functions?.length ?? 0) > 0) blockers.push(`${manifest.functions!.length} database/edge function(s) require a server-side rewrite; data staging can proceed but cutover cannot`);
   if (manifest.auth?.usersCount && manifest.auth.passwordHashExportable === false) warnings.push('Auth password hashes are not exportable; users must reset passwords or sign in through a preserved OAuth provider');
 
   const penalty = Math.min(70, blockers.length * 12 + warnings.length * 2);
   return {
-    manifestVersion: '1.0',
-    sourceProvider: manifest.source.provider,
-    compatibility: Math.max(0, 100 - penalty),
-    collections,
-    warnings,
-    blockers,
+    manifestVersion: '1.0', sourceProvider: manifest.source.provider, compatibility: Math.max(0, 100 - penalty), collections, warnings, blockers,
     steps: [
       { id: 'snapshot', title: 'Destination snapshot', automatic: true, detail: 'Create a restorable InvisibleDB backup before any schema mutation.' },
-      { id: 'schema', title: 'Compile and create schema', automatic: blockers.length === 0, detail: 'Create collections in two passes so relations resolve to destination collection IDs.' },
+      { id: 'schema', title: 'Compile and create schema', automatic: true, detail: 'Create collections in two passes so relations resolve to destination collection IDs. Untranslated security rules remain locked.' },
       { id: 'data', title: 'Stream data batches', automatic: true, detail: 'Import idempotent batches using deterministic PocketBase record IDs and source identity fields.' },
       { id: 'auth', title: 'Import auth identities', automatic: true, detail: 'Carry email/profile/verified state; require reset when portable password hashes are unavailable.' },
       { id: 'storage', title: 'Transfer files', automatic: true, detail: 'Stream signed HTTPS source objects into destination file fields without routing bytes through the LLM.' },
-      { id: 'verify', title: 'Verify migration', automatic: true, detail: 'Require exact expected/imported counts and no failed batches before cutover.' },
-      { id: 'cutover', title: 'Cut over application', automatic: blockers.length === 0, detail: 'Return endpoint/env/SDK rewrite instructions only after verification is VERIFIED.' },
+      { id: 'verify', title: 'Verify migration', automatic: true, detail: 'Require exact expected/imported row counts and no failed batches before cutover.' },
+      { id: 'cutover', title: 'Cut over application', automatic: blockers.length === 0, detail: 'Return endpoint/env/SDK rewrite instructions only after verification is VERIFIED and all blockers are cleared.' },
     ],
   };
 }
