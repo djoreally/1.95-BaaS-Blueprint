@@ -21,9 +21,10 @@ backup_one() {
   name="idb-$slug"
   volume="$name-data"
 
-  local stamp out
+  local stamp out helper integrity
   stamp="$(date -u +%F-%H%M%S)"
   out="$slug-$stamp.db"
+  helper="idb-backup-$slug-$stamp"
 
   if ! docker inspect "$name" >/dev/null 2>&1; then
     echo "skip $slug (container not found)" >&2
@@ -42,33 +43,36 @@ backup_one() {
     return 1
   fi
 
-  # Mount the tenant volume and backup directory into a short-lived helper.
-  # --entrypoint bypasses PocketBase; root is used only inside this ephemeral
-  # helper so it can read the existing database regardless of tenant UID.
-  docker run --rm \
+  cleanup() {
+    docker rm -f "$helper" >/dev/null 2>&1 || true
+  }
+  trap cleanup RETURN
+
+  # Write the snapshot into the helper container's own writable /tmp first.
+  # This avoids host bind-mount permission/readonly behavior during SQLite .backup.
+  docker run --name "$helper" \
     --user 0:0 \
     --network none \
     --cap-drop ALL \
     --security-opt no-new-privileges:true \
     --entrypoint sqlite3 \
     -v "$volume:/pb/data" \
-    -v "$BACKUP_DIR:/backup" \
     "$BACKUP_IMAGE" \
-    /pb/data/data.db ".backup '/backup/$out'" >/dev/null
+    /pb/data/data.db ".backup '/tmp/$out'" >/dev/null
 
+  docker cp "$helper:/tmp/$out" "$BACKUP_DIR/$out" >/dev/null
   chmod 600 "$BACKUP_DIR/$out"
 
   # Refuse to keep a backup that SQLite itself cannot read cleanly.
-  local integrity
   integrity="$(docker run --rm \
     --user 0:0 \
     --network none \
     --cap-drop ALL \
     --security-opt no-new-privileges:true \
     --entrypoint sqlite3 \
-    -v "$BACKUP_DIR:/backup:ro" \
+    -v "$BACKUP_DIR/$out:/backup.db:ro" \
     "$BACKUP_IMAGE" \
-    "/backup/$out" 'PRAGMA integrity_check;' 2>/dev/null || true)"
+    /backup.db 'PRAGMA integrity_check;' 2>/dev/null || true)"
   if [[ "$integrity" != "ok" ]]; then
     rm -f "$BACKUP_DIR/$out"
     echo "backup integrity check failed for $slug: ${integrity:-no result}" >&2
