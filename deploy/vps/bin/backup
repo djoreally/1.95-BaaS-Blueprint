@@ -5,10 +5,12 @@
 # Off-box copy is handled separately by the host rsync cron.
 # Usage: backup [slug]   (no slug = all customers)
 set -euo pipefail
+umask 077
 
 IDB_ROOT="${IDB_ROOT:-/srv/idb}"
 BACKUP_DIR="$IDB_ROOT/backups"
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 backup_one() {
   local slug="$1" name="idb-$1"
@@ -19,14 +21,16 @@ backup_one() {
   }
   docker cp "$name:$tmp" "$BACKUP_DIR/$slug-$stamp.db" >/dev/null
   docker exec "$name" rm -f "$tmp" >/dev/null
+  chmod 600 "$BACKUP_DIR/$slug-$stamp.db"
   gzip -f "$BACKUP_DIR/$slug-$stamp.db"
+  chmod 600 "$BACKUP_DIR/$slug-$stamp.db.gz"
   echo "backed up $slug -> $slug-$stamp.db.gz"
 }
 
 if [[ "${1:-}" != "" ]]; then
   backup_one "$1"
 else
-  for c in $(docker ps --format '{{.Names}}' | grep '^idb-' | grep -v '^idb-caddy' | grep -v '^idb-gateway' || true); do
+  for c in $(docker ps --format '{{.Names}}' | grep '^idb-' | grep -v -E '^idb-(caddy|gateway)(-|$)' || true); do
     backup_one "${c#idb-}"
   done
 fi
