@@ -1,11 +1,4 @@
-// Prisma schema for the 1.95 BaaS control plane.
-//
-// The control plane's OWN bookkeeping lives here (Neon Postgres).
-// Customer DATA stays on the customer's hosting — SQLite/MySQL files on
-// the box. This DB only remembers who you are, which hosting you
-// connected, what you provisioned, and hosted-plan entitlement state.
-//
-// DATABASE_URL comes from the environment (Neon). Never commit it.
+// Prisma schema for the InvisibleDB control plane.
 generator client {
   provider = "prisma-client-js"
 }
@@ -20,11 +13,13 @@ model User {
   email        String   @unique
   name         String?
   passwordHash String?
-  role         String   @default("user") // "user" | "admin"
+  role         String   @default("user")
   provisionRequests ProvisionRequest[]
   runtimeCommands RuntimeCommand[]
   instanceStates InstanceState[]
   instanceCredentials InstanceCredential[]
+  apiKeys ControlPlaneApiKey[]
+  migrationJobs MigrationJob[]
   createdAt    DateTime @default(now())
 
   connections  HostingConnection[]
@@ -39,14 +34,11 @@ model HostingConnection {
   label             String?
   host              String
   username          String
-  // cPanel API token, AES-256-GCM encrypted. NEVER plaintext.
   apiTokenEncrypted String   @db.Text
   mainDomain        String?
   domains           String[] @default([])
   createdAt         DateTime @default(now())
-
   projects Project[]
-
   @@index([userId])
 }
 
@@ -63,11 +55,9 @@ model Project {
   dbName       String?
   dbUser       String?
   status       String    @default("provisioning")
-  // Provisioning step history (JSON array of ProjectStep) for the feed.
   steps        Json?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-
   @@index([userId])
   @@index([connectionId])
 }
@@ -86,26 +76,22 @@ model BillingSubscription {
   lastStripeEventAt     DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
-
   @@index([userId])
   @@index([stripeCustomerId])
 }
 
-// VPS provision queue — the box polls /api/vps/requests every 2 min.
-// Written by the Stripe webhook (via lib/billing.ts queue functions).
 model ProvisionRequest {
   id        String   @id @default(cuid())
-  kind      String   // "provision" | "deprovision"
+  kind      String
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   email     String
   slug      String
-  status    String   @default("pending") // pending | claimed | done | failed
+  status    String   @default("pending")
   attempts  Int      @default(0)
   result    Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   @@index([status])
 }
 
@@ -124,7 +110,6 @@ model RuntimeCommand {
   completedAt            DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
-
   @@index([status, createdAt])
   @@index([userId, slug, createdAt])
 }
@@ -138,13 +123,10 @@ model InstanceState {
   observedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
   @@unique([userId, slug])
   @@index([slug])
 }
 
-// Server-side management credential. It is never serialized to the browser.
-// The value is encrypted with CONTROL_PLANE_ENCRYPTION_KEY (AES-256-GCM).
 model InstanceCredential {
   id              String   @id @default(cuid())
   userId          String
@@ -153,7 +135,57 @@ model InstanceCredential {
   apiKeyEncrypted String   @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
   @@unique([userId, slug])
   @@index([slug])
+}
+
+model ControlPlaneApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  prefix     String
+  keyHash    String    @unique
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  @@index([userId, createdAt])
+}
+
+model MigrationJob {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug           String
+  sourceProvider String
+  status         String    @default("planned")
+  manifest       Json
+  plan           Json
+  progress       Json?
+  verification   Json?
+  error          String?   @db.Text
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  batches        MigrationBatch[]
+  @@index([userId, slug, createdAt])
+  @@index([status, updatedAt])
+}
+
+model MigrationBatch {
+  id          String       @id @default(cuid())
+  migrationId String
+  migration   MigrationJob @relation(fields: [migrationId], references: [id], onDelete: Cascade)
+  batchKey    String
+  collection  String
+  checksum    String?
+  received    Int          @default(0)
+  imported    Int          @default(0)
+  status      String       @default("pending")
+  error       String?      @db.Text
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  @@unique([migrationId, batchKey])
+  @@index([migrationId, collection])
 }
