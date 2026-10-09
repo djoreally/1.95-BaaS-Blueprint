@@ -1,17 +1,17 @@
-import { assertMigrationManifest, compileMigrationPlan } from './migration-manifest';
-import { createMigration, cutoverMigration, importAuthBatch, importMigrationBatch, migrationStatus, queueMigrationSnapshot, rollbackMigration } from './migrations';
+import { compileMigrationPlanStrict, createMigrationStrict } from './migration-plan-strict';
+import { importAuthBatch, importMigrationBatch, migrationStatus, queueMigrationSnapshot, rollbackMigration } from './migrations';
 import { prepareMigrationWithIndexes } from './migration-indexes';
 import { resolveMigrationBlocker } from './migration-resolutions';
 import { verifyMigrationStrict } from './migration-verification';
 import { importMigrationFileSafe } from './migration-file-safe';
+import { cutoverMigrationSafe } from './migration-cutover';
 
 export async function runMigrationAction(userId: string, slug: string, body: Record<string, any>) {
   switch (body.action) {
     case 'plan':
-      assertMigrationManifest(body.manifest);
-      return compileMigrationPlan(body.manifest);
+      return compileMigrationPlanStrict(body.manifest);
     case 'create':
-      return createMigration(userId, slug, body.manifest);
+      return createMigrationStrict(userId, slug, body.manifest);
     case 'start':
       return queueMigrationSnapshot(userId, slug, String(body.migrationId || ''));
     case 'prepare':
@@ -27,7 +27,7 @@ export async function runMigrationAction(userId: string, slug: string, body: Rec
     case 'verify':
       return verifyMigrationStrict(userId, slug, String(body.migrationId || ''));
     case 'cutover':
-      return cutoverMigration(userId, slug, String(body.migrationId || ''));
+      return cutoverMigrationSafe(userId, slug, String(body.migrationId || ''));
     case 'rollback':
       return rollbackMigration(userId, slug, String(body.migrationId || ''), body.backup ? String(body.backup) : undefined);
     case 'status':
