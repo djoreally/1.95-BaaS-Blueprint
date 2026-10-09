@@ -1,10 +1,11 @@
 import { compileMigrationPlanStrict, createMigrationStrict } from './migration-plan-strict';
-import { importAuthBatch, importMigrationBatch, migrationStatus, queueMigrationSnapshot, rollbackMigration } from './migrations';
+import { importAuthBatch, importMigrationBatch, migrationStatus, rollbackMigration } from './migrations';
 import { prepareMigrationWithIndexes } from './migration-indexes';
 import { resolveMigrationBlocker } from './migration-resolutions';
 import { verifyMigrationStrict } from './migration-verification';
 import { importMigrationFileSafe } from './migration-file-safe';
 import { cutoverMigrationSafe } from './migration-cutover';
+import { queueMigrationSnapshotOnce } from './migration-snapshot';
 
 export async function runMigrationAction(userId: string, slug: string, body: Record<string, any>) {
   switch (body.action) {
@@ -13,7 +14,7 @@ export async function runMigrationAction(userId: string, slug: string, body: Rec
     case 'create':
       return createMigrationStrict(userId, slug, body.manifest);
     case 'start':
-      return queueMigrationSnapshot(userId, slug, String(body.migrationId || ''));
+      return queueMigrationSnapshotOnce(userId, slug, String(body.migrationId || ''));
     case 'prepare':
       return prepareMigrationWithIndexes(userId, slug, String(body.migrationId || ''));
     case 'batch':
