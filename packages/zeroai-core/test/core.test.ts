@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ZeroCert,
+  ZeroDeploymentMachine,
   ZeroLedger,
   ZeroMemory,
   evaluateGates,
@@ -65,6 +67,13 @@ test('ZeroTest fails closed when a required test plane is missing', async () => 
   assert.equal(evaluateGates(run.results).approved, false);
 });
 
+test('ZeroCert treats missing evidence as UNKNOWN and never self-certifies', () => {
+  const cert = new ZeroCert();
+  const record = cert.certify('migration-safety');
+  assert.equal(record.state, 'UNKNOWN');
+  assert.equal(cert.allVerified(), false);
+});
+
 test('ZeroLedger chains and verifies deterministic event hashes', () => {
   const ledger = new ZeroLedger();
   ledger.append({
@@ -98,4 +107,28 @@ test('ZeroMemory compaction never exceeds the requested byte budget', async () =
   const active = await memory.activeMemory(450);
   assert.ok(report.bytesAfter <= 450);
   assert.ok(Buffer.byteLength(active, 'utf8') <= 450);
+});
+
+test('schema-changing promotion requires approved gates and writer fence', () => {
+  const deploy = new ZeroDeploymentMachine({
+    id: 'deploy-1',
+    projectId: 'project-1',
+    active: 'blue',
+    candidate: 'green',
+    changeClass: 'schema',
+    sourceSchemaVersion: 'schema-1',
+    targetSchemaVersion: 'schema-2',
+    writerFenceRequired: true,
+  });
+
+  deploy.candidateReady();
+  deploy.beginTesting();
+  deploy.applyGateDecision({ approved: true, blocking: [] });
+  assert.throws(() => deploy.promote(), /writer fence synchronization/);
+
+  deploy.satisfyWriterFence();
+  const promoted = deploy.promote('2026-10-10T00:00:02.000Z');
+  assert.equal(promoted.state, 'promoted');
+  assert.equal(promoted.active, 'green');
+  assert.equal(promoted.candidate, 'blue');
 });
