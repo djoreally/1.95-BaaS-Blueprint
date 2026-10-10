@@ -1,5 +1,5 @@
-import type { ZeroChangeClass, ZeroGateResult } from './index.js';
-import { requiredTestPlanes } from './index.js';
+import type { ZeroChangeClass, ZeroGateResult } from './contracts.js';
+import { requiredTestPlanes } from './contracts.js';
 
 export type ZeroTestPlane = ZeroGateResult['plane'];
 
