@@ -1,127 +1,61 @@
 package invisibledb
 
-import java.net.HttpURLConnection
-import java.net.URL
-import org.json.JSONObject
-import org.json.JSONArray
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.*
+import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
-/**
- * InvisibleDB Kotlin SDK for Android.
- *
- * Two auth modes:
- * - API key (server-side only): full instance access. NEVER ship in app bundles.
- * - User auth (client-safe): authenticate as a PocketBase user, scoped by collection rules.
- *
- * ```kotlin
- * // Server-side (e.g., in your backend)
- * val db = InvisibleDB(baseUrl = "https://acme.invisibledb.app", apiKey = System.getenv("INVISIBLED_KEY"))
- *
- * // Client-side (in your Android app)
- * val db = InvisibleDB(baseUrl = "https://acme.invisibledb.app")
- * db.authWithPassword("users", "user@example.com", "password")
- * ```
- */
-class InvisibleDBError(val status: Int, message: String) : Exception("InvisibleDB $status: $message")
+interface TokenStore { suspend fun get():String?; suspend fun set(token:String); suspend fun clear() }
+class MemoryTokenStore:TokenStore { private var token:String?=null; override suspend fun get()=token; override suspend fun set(token:String){this.token=token}; override suspend fun clear(){token=null} }
+class InvisibleDBError(val status:Int,message:String):Exception("InvisibleDB $status: $message")
+data class ListOptions(val page:Int?=null,val perPage:Int?=null,val sort:String?=null,val filter:String?=null,val expand:String?=null)
+data class UploadPart(val field:String,val file:File,val contentType:String)
 
 class InvisibleDB(
-    baseUrl: String,
-    private val apiKey: String? = null
-) {
-    val baseUrl: String = baseUrl.trimEnd('/')
-    private var userToken: String? = null
+    baseUrl:String,
+    private val apiKey:String?=null,
+    private val tokenStore:TokenStore=MemoryTokenStore(),
+    timeoutSeconds:Long=15,
+    private val retries:Int=2,
+    private val client:OkHttpClient=OkHttpClient.Builder().connectTimeout(timeoutSeconds,TimeUnit.SECONDS).readTimeout(timeoutSeconds,TimeUnit.SECONDS).writeTimeout(timeoutSeconds,TimeUnit.SECONDS).build()
+){
+    val baseUrl=baseUrl.trimEnd('/'); private val json=Json{ignoreUnknownKeys=true}; @Volatile private var userToken:String?=null
+    suspend fun restoreSession():Boolean{userToken=tokenStore.get();return isAuthenticated()}; fun isAuthenticated()=userToken!=null||apiKey!=null
+    private suspend fun credential():String?{userToken?.let{return it};tokenStore.get()?.let{userToken=it;return it};return apiKey}
+    private suspend fun execute(req:Request):Response=suspendCancellableCoroutine{c->val call=client.newCall(req);c.invokeOnCancellation{call.cancel()};call.enqueue(object:Callback{override fun onFailure(call:Call,e:IOException){if(c.isActive)c.resumeWithException(e)};override fun onResponse(call:Call,response:Response){if(c.isActive)c.resume(response)else response.close()}})}
 
-    private fun authHeader(): String {
-        // User token takes precedence (client-safe). API key is server-side fallback.
-        userToken?.let { return "Bearer $it" }
-        apiKey?.let { return "Bearer $it" }
-        throw InvisibleDBError(401, "no credentials: provide apiKey or call authWithPassword first")
+    internal suspend fun request(method:String,path:String,body:RequestBody?=null,query:Map<String,String> = emptyMap(),authRequired:Boolean=true):JsonElement{
+        val ub=(baseUrl+path).toHttpUrl().newBuilder();query.forEach{(k,v)->ub.addQueryParameter(k,v)};var last:Throwable?=null
+        for(attempt in 0..retries){
+            val credential=credential();if(authRequired&&credential==null)throw InvisibleDBError(401,"authentication required")
+            val rb=Request.Builder().url(ub.build());if(credential!=null)rb.header("Authorization","Bearer $credential");val req=rb.method(method,if(method=="GET"||method=="DELETE")null else body?:ByteArray(0).toRequestBody()).build()
+            try{execute(req).use{r->if(r.code==401)throw InvisibleDBError(401,"invalid credentials");if(!r.isSuccessful){val msg=r.body?.string()?.take(300)?:"request failed";if((r.code==429||r.code>=500)&&attempt<retries){delay(250L*(1L shl attempt));return@use};throw InvisibleDBError(r.code,msg)};val t=r.body?.string().orEmpty();return if(t.isBlank())JsonNull else json.parseToJsonElement(t)}}catch(e:Throwable){last=e;if(e is InvisibleDBError)throw e;if(attempt>=retries)throw e;delay(250L*(1L shl attempt))}
+        };throw last?:IllegalStateException("request failed")
     }
 
-    @Suppress("UNCHECKED_CAST")
-    internal fun <T> req(method: String, path: String, body: Map<String, Any?>? = null, query: Map<String, String>? = null): T {
-        var urlStr = "$baseUrl$path"
-        if (!query.isNullOrEmpty()) {
-            val qs = query.entries.joinToString("&") { "${it.key}=${it.value}" }
-            urlStr += "?$qs"
-        }
-        val conn = URL(urlStr).openConnection() as HttpURLConnection
-        conn.requestMethod = method
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("Authorization", authHeader())
-        if (body != null) {
-            conn.doOutput = true
-            conn.outputStream.use { it.write(JSONObject(body as Map<String, *>).toString().toByteArray()) }
-        }
-        val code = conn.responseCode
-        if (code == 401) throw InvisibleDBError(401, "invalid credentials")
-        if (code < 200 || code >= 300) {
-            val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(300) } catch (_: Exception) { null }
-            throw InvisibleDBError(code, errBody ?: "request failed")
-        }
-        if (code == 204) return Unit as T
-        val respBody = conn.inputStream.bufferedReader().readText()
-        if (respBody.isEmpty()) return Unit as T
-        return JSONObject(respBody) as T
+    suspend fun authWithPassword(collection:String,identity:String,password:String):JsonObject{
+        val p=buildJsonObject{put("identity",identity);put("password",password)}
+        val r=request("POST","/api/collections/$collection/auth-with-password",p.toString().toRequestBody("application/json".toMediaType()),authRequired=false).jsonObject
+        val t=r["token"]?.jsonPrimitive?.content?:throw InvisibleDBError(500,"auth response missing token");userToken=t;tokenStore.set(t);return r
     }
-
-    /**
-     * Authenticate as a PocketBase user (client-safe).
-     * The token is scoped by the collection's API rules.
-     */
-    fun authWithPassword(collection: String, identity: String, password: String): Map<String, Any> {
-        val res: Map<String, Any> = req("POST", "/api/collections/$collection/auth-with-password",
-            body = mapOf("identity" to identity, "password" to password))
-        @Suppress("UNCHECKED_CAST")
-        userToken = res["token"] as? String
-            ?: throw InvisibleDBError(500, "auth response missing token")
-        return res
-    }
-
-    /** Clear the user session. */
-    fun logout() { userToken = null }
-
-    /** True if authenticated via user token or API key. */
-    fun isAuthenticated(): Boolean = userToken != null || apiKey != null
-
-    fun collection(name: String): Collection = Collection(this, name)
-
-    /** File URL for a record's file field. */
-    fun fileUrl(collection: String, recordId: String, filename: String): String =
-        "$baseUrl/api/files/$collection/$recordId/$filename"
-
-    /** Semantic vector search. */
-    fun vectorQuery(collection: String, embedding: List<Double>, limit: Int = 10): List<Map<String, Any>> {
-        val res: Map<String, Any> = req("POST", "/api/vector/query",
-            body = mapOf("collection" to collection, "embedding" to embedding, "limit" to limit))
-        @Suppress("UNCHECKED_CAST")
-        return (res["results"] as? List<Map<String, Any>>) ?: emptyList()
-    }
-
-    /** Liveness probe. */
-    fun health(): Map<String, Any> = req("GET", "/api/health")
+    suspend fun logout(){userToken=null;tokenStore.clear()};fun collection(name:String)=Collection(this,name)
+    fun fileUrl(c:String,id:String,f:String)="$baseUrl/api/files/$c/$id/$f"
+    suspend fun vectorQuery(c:String,e:List<Double>,limit:Int=10):JsonArray{val p=buildJsonObject{put("collection",c);put("embedding",JsonArray(e.map(::JsonPrimitive)));put("limit",limit)};return request("POST","/api/vector/query",p.toString().toRequestBody("application/json".toMediaType())).jsonObject["results"]?.jsonArray?:JsonArray(emptyList())}
+    suspend fun health()=request("GET","/api/health").jsonObject
+    suspend fun upload(method:String,path:String,fields:JsonObject,files:List<UploadPart>):JsonElement{val m=MultipartBody.Builder().setType(MultipartBody.FORM);fields.forEach{(k,v)->m.addFormDataPart(k,if(v is JsonPrimitive&&v.isString)v.content else v.toString())};files.forEach{p->m.addFormDataPart(p.field,p.file.name,p.file.asRequestBody(p.contentType.toMediaType()))};return request(method,path,m.build())}
+    suspend fun subscribe(collection:String,onEvent:(JsonObject)->Unit):Subscription{val h=request("POST","/api/realtime",ByteArray(0).toRequestBody()).jsonObject;val id=h["clientId"]?.jsonPrimitive?.content?:throw InvisibleDBError(500,"realtime handshake missing clientId");val p=buildJsonObject{put("clientId",id);put("subscriptions",JsonArray(listOf(JsonPrimitive(collection))))};request("POST","/api/realtime",p.toString().toRequestBody("application/json".toMediaType()));val credential=credential()?:throw InvisibleDBError(401,"authentication required");val req=Request.Builder().url("$baseUrl/api/realtime?clientId=$id").header("Authorization","Bearer $credential").build();val src=EventSources.createFactory(client).newEventSource(req,object:EventSourceListener(){override fun onEvent(eventSource:EventSource,id:String?,type:String?,data:String){runCatching{json.parseToJsonElement(data).jsonObject}.getOrNull()?.let(onEvent)}});return Subscription(src)}
 }
-
-class Collection(private val db: InvisibleDB, val name: String) {
-    private val path = "/api/collections/$name/records"
-
-    fun getList(page: Int? = null, perPage: Int? = null, sort: String? = null,
-                filter: String? = null, expand: String? = null): Map<String, Any> {
-        val q = mutableMapOf<String, String>()
-        page?.let { q["page"] = it.toString() }
-        perPage?.let { q["perPage"] = it.toString() }
-        sort?.let { q["sort"] = it }
-        filter?.let { q["filter"] = it }
-        expand?.let { q["expand"] = it }
-        return db.req("GET", path, query = q)
-    }
-
-    fun getOne(id: String): Map<String, Any> = db.req("GET", "$path/$id")
-
-    fun create(data: Map<String, Any?>): Map<String, Any> =
-        db.req("POST", path, body = data)
-
-    fun update(id: String, data: Map<String, Any?>): Map<String, Any> =
-        db.req("PATCH", "$path/$id", body = data)
-
-    fun delete(id: String) { db.req<Unit>("DELETE", "$path/$id") }
-}
+class Subscription(private val source:EventSource):AutoCloseable{override fun close(){source.cancel()}}
+class Collection(private val db:InvisibleDB,val name:String){private val path get()="/api/collections/$name/records";suspend fun getList(o:ListOptions=ListOptions()):JsonObject{val q=buildMap{if(o.page!=null)put("page",o.page.toString());if(o.perPage!=null)put("perPage",o.perPage.toString());o.sort?.let{put("sort",it)};o.filter?.let{put("filter",it)};o.expand?.let{put("expand",it)}};return db.request("GET",path,query=q).jsonObject};suspend fun getOne(id:String)=db.request("GET","$path/$id").jsonObject;suspend fun create(d:JsonObject)=db.request("POST",path,d.toString().toRequestBody("application/json".toMediaType())).jsonObject;suspend fun update(id:String,d:JsonObject)=db.request("PATCH","$path/$id",d.toString().toRequestBody("application/json".toMediaType())).jsonObject;suspend fun delete(id:String){db.request("DELETE","$path/$id")};suspend fun createWithFiles(d:JsonObject,f:List<UploadPart>)=db.upload("POST",path,d,f).jsonObject;suspend fun updateWithFiles(id:String,d:JsonObject,f:List<UploadPart>)=db.upload("PATCH","$path/$id",d,f).jsonObject;suspend fun subscribe(cb:(JsonObject)->Unit)=db.subscribe(name,cb)}
