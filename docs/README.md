@@ -33,3 +33,4 @@ the original blueprint; it predates the VPS pivot and is kept for history.
 16. [Resource Budgets & Limits](16-resource-budgets-limits.md) — What breaks first on the box, the move for each, and customer data portability.
 17. [Build Log & Launch Gate](17-build-roadmap.md) — What was actually built (2026-10-07→08) and what "1.0 launched" means: the stranger golden-path test.
 18. [Reference](18-reference.md) — Copy-paste starter kit: `/srv/idb` layout, Caddyfile pattern, provision script, VPS preflight checklist.
+19. [SDK Matrix & Conformance](19-sdk-matrix.md) — Every SDK against the universal surface, the platform facts that bind them, the defects found in non-reference SDKs, and the build order.

@@ -59,9 +59,9 @@ function CodeWindow() {
         <span className="dot" /><span className="dot" /><span className="dot" />
         <span className="hp-code-file">app.ts</span>
       </div>
-      <pre className="hp-code-body">{`import { InvisibleDB } from "invisibledb";
+      <pre className="hp-code-body">{`import { createClient } from "@invisibledb/js";
 
-const db = new InvisibleDB({
+const db = createClient({
   baseUrl: "https://demo.invisibledb.app",
   apiKey: process.env.INVISIBLEDB_KEY,
 });

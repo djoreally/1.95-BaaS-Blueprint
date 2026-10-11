@@ -19,6 +19,9 @@ RUN apk add --no-cache ca-certificates sqlite wget && \
 COPY --from=fetch /pb/pocketbase /usr/local/bin/pocketbase
 USER pocketbase
 WORKDIR /pb
+# InvisibleDB runtime hooks: routes for rpc/functions and collection triggers.
+# PocketBase loads cwd/pb_hooks (cwd is /pb).
+COPY pb_hooks /pb/pb_hooks
 VOLUME ["/pb/data"]
 EXPOSE 8090
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

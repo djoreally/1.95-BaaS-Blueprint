@@ -91,10 +91,10 @@ export default function DocsPage() {
                 Any framework — React, Next.js, Vue, or plain JavaScript. Auth, data,
                 and realtime subscriptions over HTTPS:
               </p>
-              <pre className="code">{`// npm i invisibledb
-import { InvisibleDB } from 'invisibledb';
+              <pre className="code">{`// npm i @invisibledb/js
+import { createClient } from '@invisibledb/js';
 
-const db = new InvisibleDB({
+const db = createClient({
   baseUrl: 'https://your-app.invisibledb.app',
   apiKey: 'YOUR_API_KEY',
 });

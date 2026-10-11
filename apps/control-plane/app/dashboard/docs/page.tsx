@@ -18,7 +18,7 @@ export default function DashboardDocsPage() {
 
       <section className="card" style={{ marginTop: 18 }}>
         <h2 style={{ marginTop: 0 }}>Quick start</h2>
-        <pre style={{ overflowX: 'auto', background: '#0b0b0b', border: '1px solid #202020', borderRadius: 10, padding: 14, fontSize: 13 }}>{`import { InvisibleDB } from 'invisibledb';\n\nconst db = new InvisibleDB({\n  baseUrl: 'https://YOUR_DB.invisibledb.app',\n  apiKey: process.env.INVISIBLEDB_KEY,\n});\n\nconst records = await db.collection('messages').getList();`}</pre>
+        <pre style={{ overflowX: 'auto', background: '#0b0b0b', border: '1px solid #202020', borderRadius: 10, padding: 14, fontSize: 13 }}>{`import { createClient } from '@invisibledb/js';\n\nconst db = createClient({\n  baseUrl: 'https://YOUR_DB.invisibledb.app',\n  apiKey: process.env.INVISIBLEDB_KEY,\n});\n\nconst records = await db.collection('messages').getList();`}</pre>
       </section>
     </div>
   );

@@ -27,3 +27,10 @@ storage/
 *.log
 .DS_Store
 dist-test/
+
+# Toolchain outputs
+.gradle/
+.build/
+.swiftpm/
+DerivedData/
+.dart_tool/

@@ -66,8 +66,11 @@ One snippet, API key in an env var, back to building.
 | VPS poller API | `app/api/vps/requests` | `[built]` tsc clean | needs VPS_API_SECRET both ends |
 | MCP server | `packages/mcp-server` | `[built]` tests green | single-key client (post-revert) |
 | `idb` CLI | `packages/cli` | `[built]` | |
-| JS SDK (`packages/sdk-js`) | npm | `[built]` CRUD/files/vectors/SSE, 6/6 tests, tsc clean | live-verify vs box pending |
-| Dart SDK (`packages/sdk-dart`) | pub.dev | `[built]` same surface (no realtime) | needs `dart test` on a Dart machine |
+| JS SDK (`@invisibledb/js`, `packages/sdk-js`) | npm | `[built]` 0.2.0 reference SDK: auth, query builder, CRUD, storage, transactions, realtime, vectors, rpc, functions; typed error codes; timeouts and bounded retry. 22/22 live conformance tests (C01–C18) and 46 offline tests pass against PocketBase 0.36.5 (local, not the box) | live-verify vs box pending; publish pending; see `docs/19-sdk-matrix.md` |
+| Dart SDK (`packages/sdk-dart`) | pub.dev | `[stubbed]` server-key only: no end-user auth, no realtime, no transactions | end-user auth and realtime before client use; `docs/19-sdk-matrix.md` §5 |
+| Swift SDK (`packages/sdk-swift`) | SPM | `[built, unverified]` anonymous reads, `RecordCollection`, encoded paths, rpc, error codes, XCTest suite. Not compiled yet | first CI run (`sdk-ci.yml`), then C01–C18; `docs/19-sdk-matrix.md` §5 |
+| Kotlin SDK (`packages/sdk-kotlin`) | Maven | `[built, unverified]` JSON cast, encoding, anonymous reads fixed; JUnit suite on a JDK HttpServer stub. Not compiled yet | first CI run, then C01–C18; `docs/19-sdk-matrix.md` §5 |
+| PHP (Laravel) / Python / Go / .NET SDKs | — | `[missing]` | build order in `docs/19-sdk-matrix.md` §8 |
 | sqlite-vec | `Dockerfile.vec` | `[stubbed]` written, needs box build | |
 | Legal (ToS/privacy/DPA/BYOH) | `deploy/legal` | `[stubbed]` drafts, attorney review needed | |
 | Status page | — | `[missing]` | Phase 4 |

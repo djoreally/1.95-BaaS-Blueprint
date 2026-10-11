@@ -153,7 +153,7 @@ function Connect({ endpoint, slug, runtime, onRotate }: { endpoint: string; slug
   return <>
     <Panel title="Connect your application">
       <p style={{ color: '#aaa' }}>Endpoint</p><code style={{ color: '#ffad1f' }}>{endpoint}</code>
-      <pre style={{ overflowX: 'auto', padding: 14, borderRadius: 10, background: '#0b0b0b', border: '1px solid #222', marginTop: 16 }}>{`import { InvisibleDB } from 'invisibledb';\n\nconst db = new InvisibleDB({\n  baseUrl: '${endpoint}',\n  apiKey: process.env.INVISIBLEDB_KEY,\n});`}</pre>
+      <pre style={{ overflowX: 'auto', padding: 14, borderRadius: 10, background: '#0b0b0b', border: '1px solid #222', marginTop: 16 }}>{`import { createClient } from '@invisibledb/js';\n\nconst db = createClient({\n  baseUrl: '${endpoint}',\n  apiKey: process.env.INVISIBLEDB_KEY,\n});`}</pre>
       <a href="/dashboard/docs" style={{ color: '#ff9f00' }}>SDK documentation →</a>
     </Panel>
     <Panel title="API key">

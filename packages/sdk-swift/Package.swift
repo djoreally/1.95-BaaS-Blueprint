@@ -3,11 +3,12 @@ import PackageDescription
 
 let package = Package(
     name: "InvisibleDB",
-    platforms: [.iOS(.15), .macOS(.12)],
+    platforms: [.iOS(.v15), .macOS(.v12)],
     products: [
         .library(name: "InvisibleDB", targets: ["InvisibleDB"]),
     ],
     targets: [
         .target(name: "InvisibleDB", path: "Sources/InvisibleDB"),
+        .testTarget(name: "InvisibleDBTests", dependencies: ["InvisibleDB"], path: "Tests/InvisibleDBTests"),
     ]
 )

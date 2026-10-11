@@ -1,1 +1,47 @@
-{"description":"InvisibleDB JavaScript SDK — auth, database, files, vectors in one snippet","devDependencies":{"typescript":"^5.6.3"},"exports":{".":{"default":"./dist/index.js","types":"./dist/index.d.ts"}},"license":"Apache-2.0","main":"./dist/index.js","name":"invisibledb","scripts":{"build":"tsc -p tsconfig.json","prepublishOnly":"npm run build","test":"node --test test/*.test.js"},"type":"module","types":"./dist/index.d.ts","version":"0.1.0"}
+{
+  "name": "@invisibledb/js",
+  "version": "0.2.0",
+  "description": "InvisibleDB JavaScript/TypeScript SDK: auth, collections, realtime, files, vectors, rpc and functions",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "InvisibleDB",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/djoreally/1.95-BaaS-Blueprint.git",
+    "directory": "packages/sdk-js"
+  },
+  "homepage": "https://github.com/djoreally/1.95-BaaS-Blueprint/tree/main/packages/sdk-js#readme",
+  "bugs": {
+    "url": "https://github.com/djoreally/1.95-BaaS-Blueprint/issues"
+  },
+  "keywords": ["invisibledb", "baas", "pocketbase", "sdk", "realtime", "vector"],
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "sideEffects": false,
+  "files": ["dist", "README.md", "CHANGELOG.md", "LICENSE"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepack": "npm run clean && npm run build",
+    "test": "node --test test/*.test.js",
+    "test:live": "node --experimental-eventsource --test test/live.test.js",
+    "pack:check": "npm pack --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
